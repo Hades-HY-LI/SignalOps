@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { ScenarioProvider } from "@/lib/scenario";
+import { WorkspaceProvider } from "@/lib/workspace";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <ScenarioProvider>{children}</ScenarioProvider>
+        <WorkspaceProvider>{children}</WorkspaceProvider>
       </body>
     </html>
   );

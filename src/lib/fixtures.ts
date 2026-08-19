@@ -76,7 +76,7 @@ export const vendors: VendorProfile[] = [
     specialty: "Music perception",
     rate: 0.48,
     weeklyCapacity: 12000,
-    metrics: { quality: 94, reliability: 93, costEfficiency: 82, throughput: 88, expertise: 96, responsiveness: 91, improvement: 95 },
+    metrics: { quality: 94, reliability: 93, costEfficiency: 82, throughput: 88, expertise: 96, responsiveness: 91, improvement: 95, scaling: 89 },
     history: [{ period: "W1", quality: 86 }, { period: "W2", quality: 89 }, { period: "W3", quality: 92 }, { period: "W4", quality: 94 }],
   },
   {
@@ -85,7 +85,7 @@ export const vendors: VendorProfile[] = [
     specialty: "High-volume moderation",
     rate: 0.31,
     weeklyCapacity: 26000,
-    metrics: { quality: 79, reliability: 84, costEfficiency: 95, throughput: 96, expertise: 70, responsiveness: 76, improvement: 58 },
+    metrics: { quality: 79, reliability: 84, costEfficiency: 95, throughput: 96, expertise: 70, responsiveness: 76, improvement: 58, scaling: 97 },
     history: [{ period: "W1", quality: 87 }, { period: "W2", quality: 85 }, { period: "W3", quality: 82 }, { period: "W4", quality: 79 }],
   },
   {
@@ -94,7 +94,7 @@ export const vendors: VendorProfile[] = [
     specialty: "Expert audio review",
     rate: 0.72,
     weeklyCapacity: 6000,
-    metrics: { quality: 97, reliability: 96, costEfficiency: 64, throughput: 66, expertise: 98, responsiveness: 93, improvement: 82 },
+    metrics: { quality: 97, reliability: 96, costEfficiency: 64, throughput: 66, expertise: 98, responsiveness: 93, improvement: 82, scaling: 61 },
     history: [{ period: "W1", quality: 95 }, { period: "W2", quality: 95 }, { period: "W3", quality: 96 }, { period: "W4", quality: 97 }],
   },
 ];
