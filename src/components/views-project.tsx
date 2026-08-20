@@ -27,7 +27,16 @@ import {
   Zap,
 } from "lucide-react";
 import { getAttachment, putAttachment } from "@/lib/attachments";
-import { buildLineageGraph, getReleaseEligibility } from "@/lib/domain";
+import {
+  buildLineageGraph,
+  getReleaseEligibility,
+  scoreVendor,
+} from "@/lib/domain";
+import {
+  buildDatasetExport,
+  buildEvaluationHandoffPackage,
+  datasetExportRows,
+} from "@/lib/exports";
 import { DEMO_NOW } from "@/lib/fixtures";
 import {
   canPromoteDataset,
@@ -39,7 +48,15 @@ import type {
   Project,
   RequirementAttachment,
 } from "@/lib/types";
-import { Card, downloadJson, EmptyState, Modal, PageIntro, Status } from "./ui";
+import {
+  Card,
+  downloadCsv,
+  downloadJson,
+  EmptyState,
+  Modal,
+  PageIntro,
+  Status,
+} from "./ui";
 import { visibleWidgets, WidgetManager } from "./widget-manager";
 
 const LineageMap = dynamic(
@@ -167,13 +184,18 @@ function Mission() {
         }
       />
       <div className="preset-bar">
-        <span>Mission preset</span>
+        <div className="preset-copy">
+          <strong>Dashboard view</strong>
+          <small>Changes the KPI set; it does not change project data.</small>
+        </div>
         {(
           ["delivery_health", "source_operations", "release_readiness"] as const
         ).map((p) => (
           <button
             className={ps.missionConfig.preset === p ? "active" : ""}
             key={p}
+            aria-pressed={ps.missionConfig.preset === p}
+            title={`Show ${p.replaceAll("_", " ")} widgets`}
             onClick={() =>
               dispatch({
                 type: "SET_DASHBOARD_PRESET",
@@ -207,6 +229,22 @@ function Mission() {
             Resolve the current operating constraint to advance the project
             toward release.
           </p>
+          <div className="decision-provenance">
+            <span className="calc-label">Auto-derived</span>
+            <p>
+              Generated from the project stage, blockers, sourcing status, and
+              latest evaluation state stored in this workspace.
+            </p>
+            <div className="tag-row">
+              <span className="tag">
+                Stage · {project.stage.replaceAll("_", " ")}
+              </span>
+              <span className="tag">Sources · {ps.sourcePlanStatus}</span>
+              <span className="tag">
+                Evaluation · {project.evaluationStatus.replaceAll("_", " ")}
+              </span>
+            </div>
+          </div>
           <div className="button-row">
             <Link
               className="button primary"
@@ -245,7 +283,7 @@ function Mission() {
 }
 
 function Requirements() {
-  const { project, ps, id, dispatch } = useProjectContext();
+  const { state, project, ps, id, dispatch } = useProjectContext();
   const req = ps.requirements;
   const [reason, setReason] = useState("");
   const [compare, setCompare] = useState(req.versions.at(-1)?.version ?? "");
@@ -257,6 +295,16 @@ function Requirements() {
   );
   const [reminderDue, setReminderDue] = useState(project.deadline);
   const draft = req.draft;
+  const totalShare = ps.sourcePlan.reduce((sum, item) => sum + item.share, 0);
+  const plannedRecords = ps.sourcePlan.reduce(
+    (sum, item) => sum + item.targetRecords,
+    0,
+  );
+  const vendorPlan = ps.sourcePlan.find((item) => item.source === "vendor");
+  const vendorMatches = state.vendors
+    .map((item) => ({ vendor: item, score: scoreVendor(item.metrics) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
   const edit = (
     changes: Parameters<typeof dispatch>[0] extends never
       ? never
@@ -351,6 +399,28 @@ function Requirements() {
                 </p>
               </div>
               <span className="calc-label sim-label">Editable draft</span>
+            </div>
+            <div className="document-origin-panel">
+              <div>
+                <strong>Original requirement documents</strong>
+                <p>
+                  Upload the source brief here. The structured draft below is a
+                  working interpretation; publishing records an immutable,
+                  field-level version and change reason.
+                </p>
+              </div>
+              <label className="upload-control compact-upload">
+                <Upload size={15} /> Upload source document
+                <input
+                  type="file"
+                  accept=".md,.txt,.json,.pdf"
+                  onChange={upload}
+                />
+              </label>
+              <span className="mono subtle">
+                {req.attachments.length} document
+                {req.attachments.length === 1 ? "" : "s"} linked
+              </span>
             </div>
             <div className="form-stack">
               <label>
@@ -578,10 +648,77 @@ function Requirements() {
                 </div>
               ))}
             </div>
+            <div className="source-plan-summary">
+              <div>
+                <span>Allocation</span>
+                <b className={totalShare === 100 ? "good-text" : "error-text"}>
+                  {totalShare}% / 100%
+                </b>
+              </div>
+              <div>
+                <span>Planned records</span>
+                <b>{plannedRecords.toLocaleString()}</b>
+              </div>
+              <div>
+                <span>Vendor budget</span>
+                <b>${(vendorPlan?.estimatedCost ?? 0).toLocaleString()}</b>
+              </div>
+            </div>
+            <div className="button-row source-plan-actions">
+              <button
+                className="button primary"
+                disabled={
+                  totalShare !== 100 || ps.sourcePlanStatus === "aligned"
+                }
+                onClick={() =>
+                  dispatch({ type: "SAVE_SOURCE_PLAN", projectId: id })
+                }
+              >
+                <Check size={14} /> Save source plan
+              </button>
+              <Link className="button" href={`/projects/${id}/operations`}>
+                Review vendor match <ArrowRight size={13} />
+              </Link>
+              <span className="subtle">
+                {ps.sourcePlanStatus === "aligned"
+                  ? "Saved in this browser and linked to the current requirement."
+                  : totalShare === 100
+                    ? "Unsaved source-plan changes."
+                    : "Allocation must total 100% before saving."}
+              </span>
+            </div>
+            <div className="vendor-match-preview">
+              <div className="card-header">
+                <div>
+                  <h4>Vendor scorecard connection</h4>
+                  <p className="subtle">
+                    Matching combines the directory score with project modality,
+                    capacity, availability, and the vendor share above.
+                  </p>
+                </div>
+                <span className="calc-label">Live ranking</span>
+              </div>
+              {vendorMatches.map(({ vendor: item, score }) => (
+                <div className="kv" key={item.id}>
+                  <span>
+                    {item.name} · {item.availability}
+                  </span>
+                  <b>
+                    {score}/100 · {item.weeklyCapacity.toLocaleString()}/wk
+                  </b>
+                </div>
+              ))}
+            </div>
           </Card>
           <Card>
             <div className="card-header">
-              <h3>Attachments</h3>
+              <div>
+                <h3>Document library</h3>
+                <p className="subtle">
+                  Source files stay linked to the requirement while published
+                  field changes remain in version history.
+                </p>
+              </div>
               <span className="sim-label">Local only</span>
             </div>
             <label className="upload-control">
@@ -826,6 +963,13 @@ function Operations() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchName, setBatchName] = useState("Priority review batch");
   const [vendor, setVendor] = useState(state.vendors[0]?.id ?? "");
+  const selectedVendor = state.vendors.find((item) => item.id === vendor);
+  const snapshot = ps.internalOpsSnapshots.at(-1);
+  const vendorSource = ps.sourcePlan.find((item) => item.source === "vendor");
+  const internalSource = ps.sourcePlan.find(
+    (item) => item.source === "internal",
+  );
+  const projectDataset = state.datasets.find((item) => item.projectId === id);
   const qa = scenario.qaReport;
   const flagged = qa?.gates.flatMap((g) => (g.passed ? [] : g.recordIds))[0];
   const completeBatch = (batchId: string, total: number) => {
@@ -853,7 +997,8 @@ function Operations() {
         actions={<ProjectBadge project={project} />}
       />
       <div className="grid grid-2">
-        <Card>
+        <Card className="vendor-engagement-card">
+          <span id="vendor-engagement" className="anchor-target" />
           <div className="card-header">
             <div>
               <h3>Vendor engagement</h3>
@@ -890,6 +1035,30 @@ function Operations() {
               Add engagement
             </button>
           </div>
+          {selectedVendor ? (
+            <div className="vendor-fit-strip">
+              <div>
+                <span>Weighted score</span>
+                <b>{scoreVendor(selectedVendor.metrics)}/100</b>
+              </div>
+              <div>
+                <span>Throughput score</span>
+                <b>{selectedVendor.metrics.throughput}/100</b>
+              </div>
+              <div>
+                <span>Weekly capacity</span>
+                <b>{selectedVendor.weeklyCapacity.toLocaleString()}</b>
+              </div>
+              <div>
+                <span>Rate</span>
+                <b>${selectedVendor.rate}/task</b>
+              </div>
+              <div>
+                <span>Plan demand</span>
+                <b>{(vendorSource?.targetRecords ?? 0).toLocaleString()}</b>
+              </div>
+            </div>
+          ) : null}
           {ps.vendorEngagements.map((e) => {
             const v = state.vendors.find((x) => x.id === e.vendorId)!;
             const pilots = state.vendorPilots.filter(
@@ -913,6 +1082,7 @@ function Operations() {
                     <b>{p.taskCount} tasks</b>
                     <b>${p.totalCost}</b>
                     <b>{p.turnaroundHours}h</b>
+                    <b>{p.throughputPerDay}/day</b>
                     <b>{Math.round(p.quality * 100)}% quality</b>
                     <Status value={p.decision} />
                   </div>
@@ -926,94 +1096,104 @@ function Operations() {
             <div>
               <h3>In-house management</h3>
               <p className="subtle">
-                Aggregate workload, capacity, calibration, and QA.
+                Track data entering the external annotation platform, aggregate
+                processing progress, and data returned to unified QA.
               </p>
             </div>
             <Users size={17} />
           </div>
-          {ps.internalOpsSnapshots.at(-1) ? (
+          <div
+            className="ops-data-route"
+            role="region"
+            aria-label="In-house data flow"
+          >
+            <div>
+              <span>Input source</span>
+              <b>
+                {(internalSource?.targetRecords ?? 0).toLocaleString()} planned
+                records
+              </b>
+              <small>
+                Source plan · requirement {ps.requirements.currentVersion}
+              </small>
+            </div>
+            <ArrowRight size={15} />
+            <div>
+              <span>Processing</span>
+              <b>Annotation platform</b>
+              <small>Batch sync · calibration · human QC</small>
+            </div>
+            <ArrowRight size={15} />
+            <div>
+              <span>Destination</span>
+              <b>Unified quality layer</b>
+              <small>Aggregate QA result and dataset eligibility</small>
+            </div>
+          </div>
+          <p className="source-note">
+            <span className="sim-label">Browser-local sync</span>
+            {snapshot
+              ? ` Latest operational snapshot: ${snapshot.capturedAt.slice(0, 10)}. Metrics are imported from the simulated annotation-platform connector.`
+              : " No operational snapshot has been imported. Create a batch, then sync external progress to populate throughput and QA."}
+          </p>
+          {snapshot ? (
             <>
               <div className="grid grid-3 mini-stats">
                 <div>
                   <span>Backlog</span>
-                  <b>{ps.internalOpsSnapshots.at(-1)!.backlog}</b>
+                  <b>{snapshot.backlog}</b>
                 </div>
                 <div>
                   <span>Completed</span>
-                  <b>{ps.internalOpsSnapshots.at(-1)!.completedTasks}</b>
+                  <b>{snapshot.completedTasks}</b>
                 </div>
                 <div>
                   <span>Daily throughput</span>
-                  <b>{ps.internalOpsSnapshots.at(-1)!.dailyThroughput}</b>
+                  <b>{snapshot.dailyThroughput}</b>
                 </div>
                 <div>
                   <span>Median cycle</span>
-                  <b>{ps.internalOpsSnapshots.at(-1)!.medianCycleHours}h</b>
+                  <b>{snapshot.medianCycleHours}h</b>
                 </div>
                 <div>
                   <span>SLA</span>
-                  <b>
-                    {Math.round(
-                      ps.internalOpsSnapshots.at(-1)!.slaAttainment * 100,
-                    )}
-                    %
-                  </b>
+                  <b>{Math.round(snapshot.slaAttainment * 100)}%</b>
                 </div>
                 <div>
                   <span>Capacity</span>
-                  <b>{ps.internalOpsSnapshots.at(-1)!.availableCapacity}</b>
+                  <b>{snapshot.availableCapacity}</b>
                 </div>
                 <div>
                   <span>Calibration</span>
-                  <b>
-                    {Math.round(
-                      ps.internalOpsSnapshots.at(-1)!.calibrationAgreement *
-                        100,
-                    )}
-                    %
-                  </b>
+                  <b>{Math.round(snapshot.calibrationAgreement * 100)}%</b>
                 </div>
                 <div>
                   <span>Escalation</span>
-                  <b>
-                    {Math.round(
-                      ps.internalOpsSnapshots.at(-1)!.escalationRate * 100,
-                    )}
-                    %
-                  </b>
+                  <b>{Math.round(snapshot.escalationRate * 100)}%</b>
                 </div>
                 <div>
                   <span>QC failure</span>
-                  <b>
-                    {Math.round(
-                      ps.internalOpsSnapshots.at(-1)!.qcFailureRate * 100,
-                    )}
-                    %
-                  </b>
+                  <b>{Math.round(snapshot.qcFailureRate * 100)}%</b>
                 </div>
               </div>
               <div className="grid grid-2 ops-breakdown">
                 <div>
                   <h4>Team allocation</h4>
-                  {ps.internalOpsSnapshots
-                    .at(-1)!
-                    .teamAllocation.map((item) => (
-                      <div className="kv" key={item.team}>
-                        <span>{item.team}</span>
-                        <b>{item.tasks} tasks</b>
-                      </div>
-                    ))}
+                  {snapshot.teamAllocation.map((item) => (
+                    <div className="kv" key={item.team}>
+                      <span>{item.team}</span>
+                      <b>{item.tasks} tasks</b>
+                    </div>
+                  ))}
                 </div>
                 <div>
                   <h4>Defect taxonomy</h4>
-                  {ps.internalOpsSnapshots
-                    .at(-1)!
-                    .defectTaxonomy.map((item) => (
-                      <div className="kv" key={item.label}>
-                        <span>{item.label}</span>
-                        <b>{item.count}</b>
-                      </div>
-                    ))}
+                  {snapshot.defectTaxonomy.map((item) => (
+                    <div className="kv" key={item.label}>
+                      <span>{item.label}</span>
+                      <b>{item.count}</b>
+                    </div>
+                  ))}
                 </div>
               </div>
             </>
@@ -1074,19 +1254,61 @@ function Operations() {
       <Card className="route-section">
         <div className="card-header">
           <div>
-            <h3>Unexpected Vocals quality workflow</h3>
+            <h3>{project.name} delivery quality control</h3>
             <p className="subtle">
-              Scoped automated QA, adjudication, and remediation controls.
+              Layered intake checks, AI-assisted screening, gold calibration,
+              human QC, and release gating for incoming data.
             </p>
           </div>
           <Status value={scenario.program.stage} />
         </div>
+        <QualityFunnel
+          deliveryCount={
+            id === "unexpected-vocals"
+              ? 48
+              : (projectDataset?.recordCount ?? project.recordVolume)
+          }
+          qa={qa}
+          datasetPassed={projectDataset?.qaStatus === "passed"}
+          stage={scenario.program.stage}
+        />
         {id !== "unexpected-vocals" ? (
-          <EmptyState
-            icon={<ShieldCheck />}
-            title="No delivery attached"
-            text="This project is still in planning. Select sources and create a pilot to begin QA."
-          />
+          projectDataset ? (
+            <div className="notice quality-evidence-notice">
+              <ShieldCheck size={16} />
+              <div>
+                <strong>
+                  {projectDataset.version} passed aggregate quality review
+                </strong>
+                <p>
+                  {projectDataset.recordCount.toLocaleString()} accepted records
+                  are linked to requirement {projectDataset.requirementVersion}.
+                  This seeded project exposes management evidence; the
+                  executable record-level defect drill-down remains scoped to
+                  Unexpected Vocals.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <EmptyState
+              icon={<ShieldCheck />}
+              title="Connect the first delivery"
+              text="The quality-control design is ready, but this seeded project has no executable delivery attached. Save a source plan and add a vendor engagement to begin the intake funnel."
+              action={
+                <div className="button-row">
+                  <Link
+                    className="button"
+                    href={`/projects/${id}/requirements`}
+                  >
+                    Complete source plan
+                  </Link>
+                  <a className="button primary" href="#vendor-engagement">
+                    Select vendor
+                  </a>
+                </div>
+              }
+            />
+          )
         ) : (
           <>
             <div className="button-row">
@@ -1228,8 +1450,91 @@ function Operations() {
   );
 }
 
+function QualityFunnel({
+  deliveryCount,
+  qa,
+  datasetPassed,
+  stage,
+}: {
+  deliveryCount: number;
+  qa: ReturnType<typeof useProjectContext>["ps"]["scenario"]["qaReport"];
+  datasetPassed: boolean;
+  stage: ReturnType<
+    typeof useProjectContext
+  >["ps"]["scenario"]["program"]["stage"];
+}) {
+  const failed = qa?.blockedCount ?? 0;
+  const passed = qa?.acceptedCount ?? (datasetPassed ? deliveryCount : 0);
+  const layers = [
+    {
+      label: "Intake",
+      detail: "schema · duplicates · provenance",
+      count: deliveryCount,
+      state: datasetPassed ? "complete" : deliveryCount ? "active" : "pending",
+    },
+    {
+      label: "AI screen",
+      detail: "confidence · anomaly · slice routing",
+      count: qa || datasetPassed ? deliveryCount : 0,
+      state: qa || datasetPassed ? "complete" : "pending",
+    },
+    {
+      label: "Gold calibration",
+      detail: "reference accuracy · disagreement",
+      count: qa || datasetPassed ? deliveryCount : 0,
+      state: qa
+        ? qa.passed
+          ? "complete"
+          : "blocked"
+        : datasetPassed
+          ? "complete"
+          : "pending",
+    },
+    {
+      label: "Human QC",
+      detail: "exception adjudication · rationale",
+      count: failed,
+      state: failed ? "active" : qa || datasetPassed ? "complete" : "pending",
+    },
+    {
+      label: "Release gate",
+      detail: "coverage · aggregate QA · lineage",
+      count: passed,
+      state:
+        qa?.passed || datasetPassed
+          ? "complete"
+          : stage === "qa_blocked"
+            ? "blocked"
+            : "pending",
+    },
+  ];
+  return (
+    <div
+      className="quality-funnel"
+      role="region"
+      aria-label="Quality-control layers"
+    >
+      {layers.map((layer, index) => (
+        <div className={`quality-layer ${layer.state}`} key={layer.label}>
+          <span className="layer-number">{index + 1}</span>
+          <div>
+            <strong>{layer.label}</strong>
+            <small>{layer.detail}</small>
+          </div>
+          <b>{layer.count.toLocaleString()}</b>
+          <Status value={layer.state} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Workflow() {
-  const { ps, project } = useProjectContext();
+  const { state, ps, project, id } = useProjectContext();
+  const assigned = state.registryEntries.filter((entry) =>
+    entry.assignedProjectIds.includes(id),
+  );
+  const primary = assigned.find((entry) => entry.kind === "workflow");
   return (
     <>
       <PageIntro
@@ -1238,6 +1543,56 @@ function Workflow() {
         description="Versioned stages, owners, dependencies, and artifact links for this project."
         actions={<ProjectBadge project={project} />}
       />
+      <div className="workflow-overview">
+        <Card>
+          <div className="eyebrow">Purpose</div>
+          <h3>{primary?.name ?? "Workflow not assigned"}</h3>
+          <p>
+            Converts records selected by the source plan into versioned labels,
+            QA evidence, and an eligible dataset release.
+          </p>
+        </Card>
+        <Card>
+          <div className="eyebrow">Inputs</div>
+          <div className="tag-row">
+            <span className="tag">
+              Requirement {ps.requirements.currentVersion}
+            </span>
+            <span className="tag">
+              {ps.sourcePlan
+                .reduce((sum, item) => sum + item.targetRecords, 0)
+                .toLocaleString()}{" "}
+              planned records
+            </span>
+            <span className="tag">
+              {ps.vendorEngagements.length} vendor engagement(s)
+            </span>
+          </div>
+        </Card>
+        <Card>
+          <div className="eyebrow">Outputs</div>
+          <div className="tag-row">
+            <span className="tag">Decision records</span>
+            <span className="tag">QA report</span>
+            <span className="tag">Dataset manifest</span>
+          </div>
+        </Card>
+      </div>
+      <div className="workflow-data-route" aria-label="Project workflow path">
+        {[
+          "Requirement & source plan",
+          "Vendor / in-house collection",
+          "Layered quality control",
+          "Dataset release",
+          "Evaluation decision",
+        ].map((item, index, list) => (
+          <div className="workflow-route-item" key={item}>
+            <span>{index + 1}</span>
+            <b>{item}</b>
+            {index < list.length - 1 ? <ArrowRight size={15} /> : null}
+          </div>
+        ))}
+      </div>
       {ps.workflowStages.length ? (
         <div className="workflow-timeline">
           {ps.workflowStages.map((stage, index) => (
@@ -1270,6 +1625,24 @@ function Workflow() {
                       <li key={x}>{x}</li>
                     ))}
                   </ul>
+                </div>
+              </div>
+              <div className="stage-evidence-grid">
+                <div>
+                  <span>What runs</span>
+                  <b>
+                    {stage.name === "Rubric classification"
+                      ? "Versioned rubric assignment with confidence routing"
+                      : "Configured project workflow control"}
+                  </b>
+                </div>
+                <div>
+                  <span>Evidence produced</span>
+                  <b>Decision log · QA metrics · artifact lineage</b>
+                </div>
+                <div>
+                  <span>Execution boundary</span>
+                  <b>External annotation; SignalOps monitors and gates</b>
                 </div>
               </div>
               <div className="tag-row">
@@ -1479,11 +1852,44 @@ function Release() {
         description="Create a traceable dataset, complete the evaluation lifecycle, then promote or hold with rationale."
         actions={<ProjectBadge project={project} />}
       />
+      <div className="section-label-row">
+        <div>
+          <strong>Release gate status</strong>
+          <p>
+            Read-only progress. Complete the linked work below to advance each
+            gate.
+          </p>
+        </div>
+      </div>
       <div className="release-steps">
-        <Step label="Quality" done={!!scenario.qaReport?.passed} />
-        <Step label="In-house batches" done={batchesReady} />
-        <Step label="Dataset" done={!!dataset} />
-        <Step label="Evaluation" done={handoff?.status === "decision_ready"} />
+        <Step
+          label="Quality"
+          done={!!scenario.qaReport?.passed || dataset?.qaStatus === "passed"}
+          detail={
+            scenario.qaReport?.passed || dataset?.qaStatus === "passed"
+              ? "QA gates passed"
+              : "Complete delivery QA"
+          }
+        />
+        <Step
+          label="In-house batches"
+          done={batchesReady}
+          detail={
+            batchesReady ? "Aggregate QA passed" : "Sync and import results"
+          }
+        />
+        <Step
+          label="Dataset"
+          done={!!dataset}
+          detail={dataset ? dataset.version : "Build immutable release"}
+        />
+        <Step
+          label="Evaluation"
+          done={handoff?.status === "decision_ready"}
+          detail={
+            handoff ? handoff.status.replaceAll("_", " ") : "Create handoff"
+          }
+        />
         <Step
           label="Decision"
           done={
@@ -1529,11 +1935,30 @@ function Release() {
                     datasetId: dataset.id,
                     format: "json",
                   });
-                  downloadJson(`${dataset.id}.json`, dataset);
+                  downloadJson(
+                    `${dataset.id}-record-manifest.json`,
+                    buildDatasetExport(dataset),
+                  );
                 }}
               >
-                <Download size={14} /> Download manifest
+                <Download size={14} /> Download record manifest JSON
               </button>
+              <button
+                className="button"
+                onClick={() =>
+                  downloadCsv(
+                    `${dataset.id}-records.csv`,
+                    datasetExportRows(dataset),
+                  )
+                }
+              >
+                <Download size={14} /> Download record manifest CSV
+              </button>
+              <p className="source-note">
+                The manifest contains one row per record plus source, lineage,
+                requirement version, QA state, and a simulated object-storage
+                URI. Raw audio is not embedded in this browser demo.
+              </p>
             </>
           ) : (
             <EmptyState
@@ -1541,15 +1966,25 @@ function Release() {
               title="Release not built"
               text={`${eligibility.eligible ? "Scenario is eligible" : `${eligibility.vendorPassed ? "" : "Vendor QA must pass. "} ${eligibility.internalComplete ? "" : "Internal review must complete."}`}${!batchesReady ? " · Aggregate in-house batch QA is required." : ""}`}
               action={
-                <button
-                  className="button primary"
-                  disabled={!eligibility.eligible || !batchesReady}
-                  onClick={() =>
-                    dispatch({ type: "BUILD_RELEASE", projectId: id })
-                  }
-                >
-                  <PackageCheck size={14} /> Build release
-                </button>
+                <div className="button-row">
+                  <button
+                    className="button primary"
+                    disabled={!eligibility.eligible || !batchesReady}
+                    onClick={() =>
+                      dispatch({ type: "BUILD_RELEASE", projectId: id })
+                    }
+                  >
+                    <PackageCheck size={14} /> Build release
+                  </button>
+                  {!eligibility.eligible || !batchesReady ? (
+                    <Link
+                      className="button"
+                      href={`/projects/${id}/operations`}
+                    >
+                      Resolve prerequisites <ArrowRight size={13} />
+                    </Link>
+                  ) : null}
+                </div>
               }
             />
           )}
@@ -1559,7 +1994,8 @@ function Release() {
             <div>
               <h3>Evaluation handoff</h3>
               <p className="subtle">
-                Connector execution and results are simulated.
+                Send an immutable dataset plus metric instructions to Research,
+                ML, or both. Connector execution remains simulated.
               </p>
             </div>
             <span className="sim-label">Simulated execution</span>
@@ -1568,7 +2004,12 @@ function Release() {
             <EmptyState
               icon={<Send />}
               title="Dataset required"
-              text="Build a passing candidate before evaluation handoff."
+              text="A handoff needs a record-level dataset manifest. Complete quality and in-house gates, then build the immutable release."
+              action={
+                <Link className="button" href={`/projects/${id}/operations`}>
+                  Open prerequisite work
+                </Link>
+              }
             />
           ) : !handoff ? (
             <button
@@ -1580,6 +2021,41 @@ function Release() {
             </button>
           ) : (
             <>
+              <div className="handoff-route">
+                <span>Record manifest</span>
+                <ArrowRight size={13} />
+                <span>
+                  {handoff.delivery === "download"
+                    ? "Downloaded package"
+                    : "Evaluation API"}
+                </span>
+                <ArrowRight size={13} />
+                <span>{handoff.owners.join(" + ")}</span>
+                <ArrowRight size={13} />
+                <span>Results callback</span>
+              </div>
+              <div className="connection-guide compact-guide">
+                <div className="kv">
+                  <span>Dataset records</span>
+                  <b>{dataset.recordCount.toLocaleString()}</b>
+                </div>
+                <div className="kv">
+                  <span>Data access</span>
+                  <b>Record manifest + object URIs</b>
+                </div>
+                <div className="kv">
+                  <span>Evaluation spec</span>
+                  <b>
+                    {handoff.targetMetrics.length} target ·{" "}
+                    {handoff.guardrails.length} guardrail
+                  </b>
+                </div>
+                <p>
+                  Download mode gives the evaluation owner a self-contained
+                  package. Connector mode posts the same package to the Registry
+                  Evaluation API and expects structured results at the callback.
+                </p>
+              </div>
               <div className="evaluation-lifecycle">
                 {[
                   "requested",
@@ -1598,9 +2074,14 @@ function Release() {
               </div>
               <button
                 className="button"
-                onClick={() => downloadJson(`${handoff.id}.json`, handoff)}
+                onClick={() =>
+                  downloadJson(
+                    `${handoff.id}-evaluation-package.json`,
+                    buildEvaluationHandoffPackage(dataset, handoff),
+                  )
+                }
               >
-                <Download size={14} /> Download handoff package
+                <Download size={14} /> Download complete evaluation package
               </button>
               {["requested", "accepted"].includes(handoff.status) ? (
                 <button
@@ -1733,11 +2214,22 @@ function Release() {
   );
 }
 
-function Step({ label, done }: { label: string; done: boolean }) {
+function Step({
+  label,
+  done,
+  detail,
+}: {
+  label: string;
+  done: boolean;
+  detail?: string;
+}) {
   return (
     <div className={done ? "done" : ""}>
       <span>{done ? <Check size={13} /> : null}</span>
-      <b>{label}</b>
+      <div>
+        <b>{label}</b>
+        {detail ? <small>{detail}</small> : null}
+      </div>
     </div>
   );
 }

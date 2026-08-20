@@ -174,16 +174,17 @@ export function downloadJson(filename: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-export function downloadCsv(
-  filename: string,
-  rows: Array<Record<string, unknown>>,
-) {
+export function downloadCsv(filename: string, rows: object[]) {
   const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const escape = (value: unknown) =>
     `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csv = [
     keys.map(escape).join(","),
-    ...rows.map((row) => keys.map((key) => escape(row[key])).join(",")),
+    ...rows.map((row) =>
+      keys
+        .map((key) => escape((row as Record<string, unknown>)[key]))
+        .join(","),
+    ),
   ].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   const anchor = document.createElement("a");

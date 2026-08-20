@@ -583,6 +583,7 @@ export interface ProjectState {
 
 export interface WorkspaceState {
   schemaVersion: 2;
+  fixtureRevision: 2;
   projects: Project[];
   activeProjectId: string;
   projectStates: Record<string, ProjectState>;

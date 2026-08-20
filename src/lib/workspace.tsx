@@ -141,6 +141,7 @@ function initialProjectState(
   project: Project,
   interactive = false,
 ): ProjectState {
+  const naturalness = project.id === "vocal-naturalness";
   const requirementVersion = interactive
     ? "v3"
     : project.id === "vocal-naturalness"
@@ -164,14 +165,43 @@ function initialProjectState(
     sourcePlan: sourcePlan.map((item) =>
       interactive
         ? { ...item }
-        : {
-            ...item,
-            targetRecords: 0,
-            share: 0,
-            estimatedCost: 0,
-            confidence: "low" as const,
-            turnaround: "Not planned",
-          },
+        : naturalness
+          ? {
+              ...item,
+              targetRecords:
+                item.source === "vendor"
+                  ? 6800
+                  : item.source === "internal"
+                    ? 550
+                    : 4650,
+              share:
+                item.source === "vendor"
+                  ? 57
+                  : item.source === "internal"
+                    ? 5
+                    : 38,
+              estimatedCost:
+                item.source === "vendor"
+                  ? 4896
+                  : item.source === "internal"
+                    ? 1650
+                    : 0,
+              confidence: item.source === "product" ? "medium" : "high",
+              turnaround:
+                item.source === "vendor"
+                  ? "6 days"
+                  : item.source === "internal"
+                    ? "2 days"
+                    : "Continuous",
+            }
+          : {
+              ...item,
+              targetRecords: 0,
+              share: 0,
+              estimatedCost: 0,
+              confidence: "low" as const,
+              turnaround: "Not planned",
+            },
     ),
     sourcePlanStatus: "aligned",
     vendorEngagements: interactive
@@ -186,7 +216,19 @@ function initialProjectState(
             createdAt: DEMO_NOW,
           },
         ]
-      : [],
+      : naturalness
+        ? [
+            {
+              id: "engagement-naturalness-aural",
+              projectId: project.id,
+              vendorId: "aural",
+              status: "production",
+              requirementVersion: "v2",
+              workPackageVersion: "wp-v2",
+              createdAt: DEMO_NOW,
+            },
+          ]
+        : [],
     internalWorkBatches: interactive
       ? [
           {
@@ -202,22 +244,81 @@ function initialProjectState(
             updatedAt: DEMO_NOW,
           },
         ]
-      : [],
-    internalOpsSnapshots: interactive ? [seedOpsSnapshot(project.id)] : [],
-    workflowStages: [
-      {
-        id: `workflow-stage-${project.id}-1`,
-        projectId: project.id,
-        name: "Rubric classification",
-        owner: project.owner,
-        version: interactive ? "workflow-v3" : "workflow-v1",
-        status: interactive ? "active" : "pending",
-        entryCriteria: ["Published requirement"],
-        exitCriteria: ["Quality gates pass"],
-        dependencies: ["requirement", "source-plan"],
-        linkedArtifactIds: ["request", "guideline"],
-      },
-    ],
+      : naturalness
+        ? [
+            {
+              id: "internal-batch-naturalness-v2",
+              projectId: project.id,
+              name: "Preference calibration review",
+              team: "Music Preference",
+              status: "completed",
+              totalTasks: 550,
+              completedTasks: 550,
+              aggregateQA: 0.95,
+              requirementVersion: "v2",
+              createdAt: DEMO_NOW,
+              updatedAt: DEMO_NOW,
+            },
+          ]
+        : [],
+    internalOpsSnapshots:
+      interactive || naturalness ? [seedOpsSnapshot(project.id)] : [],
+    workflowStages: naturalness
+      ? [
+          {
+            id: `workflow-stage-${project.id}-1`,
+            projectId: project.id,
+            name: "Collection preparation",
+            owner: project.owner,
+            version: "workflow-v2",
+            status: "complete",
+            entryCriteria: ["Published requirement", "Source plan saved"],
+            exitCriteria: ["Pilot accepted", "Data contract validated"],
+            dependencies: ["requirement", "source-plan", "vendor-scorecard"],
+            linkedArtifactIds: ["requirement-v2", "pilot-v1"],
+          },
+          {
+            id: `workflow-stage-${project.id}-2`,
+            projectId: project.id,
+            name: "Pairwise preference collection",
+            owner: "Aural Insights",
+            version: "workflow-v2",
+            status: "complete",
+            entryCriteria: ["Pilot accepted", "Gold set calibrated"],
+            exitCriteria: ["12,000 judgments collected", "SLA attained"],
+            dependencies: ["annotation-platform", "object-storage"],
+            linkedArtifactIds: ["work-package-v2", "rubric-v2"],
+          },
+          {
+            id: `workflow-stage-${project.id}-3`,
+            projectId: project.id,
+            name: "Quality and evaluation handoff",
+            owner: project.researchOwner,
+            version: "workflow-v2",
+            status: "active",
+            entryCriteria: ["Aggregate QA passed", "Dataset manifest built"],
+            exitCriteria: ["Research evaluation complete", "Decision recorded"],
+            dependencies: ["quality-layer", "evaluation-api"],
+            linkedArtifactIds: [
+              "dataset-naturalness-v2",
+              "evaluation-naturalness-v2",
+            ],
+          },
+        ]
+      : [
+          {
+            id: `workflow-stage-${project.id}-1`,
+            projectId: project.id,
+            name: "Rubric classification",
+            owner: project.owner,
+            version: interactive ? "workflow-v3" : "workflow-v1",
+            status: interactive ? "active" : "pending",
+            entryCriteria: ["Published requirement"],
+            exitCriteria: ["Quality gates pass"],
+            dependencies: ["requirement", "source-plan"],
+            linkedArtifactIds: ["request", "guideline"],
+          },
+        ],
     scenario,
     releaseReferences: [],
     evaluationReferences: [],
@@ -225,6 +326,31 @@ function initialProjectState(
 }
 
 function seedOpsSnapshot(projectId: string): InternalOpsSnapshot {
+  if (projectId === "vocal-naturalness") {
+    return {
+      id: `ops-${projectId}-1`,
+      projectId,
+      capturedAt: DEMO_NOW,
+      backlog: 4650,
+      completedTasks: 7350,
+      dailyThroughput: 910,
+      medianCycleHours: 11.2,
+      slaAttainment: 0.96,
+      calibrationAgreement: 0.95,
+      escalationRate: 0.03,
+      qcFailureRate: 0.025,
+      availableCapacity: 2400,
+      teamAllocation: [
+        { team: "Aural vendor collection", tasks: 6800 },
+        { team: "Music Preference calibration", tasks: 550 },
+      ],
+      defectTaxonomy: [
+        { label: "Low-confidence pair", count: 118 },
+        { label: "Locale mismatch", count: 34 },
+      ],
+      simulated: true,
+    };
+  }
   return {
     id: `ops-${projectId}-1`,
     projectId,
@@ -463,6 +589,7 @@ export function createInitialWorkspaceState(): WorkspaceState {
   };
   return {
     schemaVersion: 2,
+    fixtureRevision: 2,
     projects,
     activeProjectId: "unexpected-vocals",
     projectStates,
@@ -504,7 +631,9 @@ export function createInitialWorkspaceState(): WorkspaceState {
         assignedProjectIds:
           item.id === "workflow-rubric-classification"
             ? ["unexpected-vocals"]
-            : [],
+            : item.id === "workflow-pairwise"
+              ? ["vocal-naturalness"]
+              : [],
         description: item.description,
       })),
       {
@@ -514,7 +643,7 @@ export function createInitialWorkspaceState(): WorkspaceState {
         version: "adapter-v1",
         status: "simulated",
         capabilities: ["batch handoff", "result import"],
-        assignedProjectIds: ["unexpected-vocals"],
+        assignedProjectIds: ["unexpected-vocals", "vocal-naturalness"],
         description:
           "Browser-local representation of an external annotation platform connection.",
       },
@@ -525,7 +654,7 @@ export function createInitialWorkspaceState(): WorkspaceState {
         version: "adapter-v1",
         status: "template",
         capabilities: ["evaluation handoff", "result callback"],
-        assignedProjectIds: [],
+        assignedProjectIds: ["vocal-naturalness"],
         description:
           "Reusable contract for evaluation requests and structured metric results.",
       },
@@ -536,7 +665,7 @@ export function createInitialWorkspaceState(): WorkspaceState {
         version: "adapter-v1",
         status: "template",
         capabilities: ["delivery receipt", "status notification"],
-        assignedProjectIds: [],
+        assignedProjectIds: ["vocal-naturalness"],
         description:
           "Versioned webhook contract for vendor delivery and remediation events.",
       },
@@ -547,7 +676,7 @@ export function createInitialWorkspaceState(): WorkspaceState {
         version: "adapter-v1",
         status: "template",
         capabilities: ["manifest export", "result import"],
-        assignedProjectIds: [],
+        assignedProjectIds: ["vocal-naturalness"],
         description: "Reusable batch exchange definition.",
       },
       {
@@ -630,6 +759,7 @@ export type WorkspaceAction =
       source: SourcePlanItem["source"];
       changes: Partial<Omit<SourcePlanItem, "source">>;
     }
+  | { type: "SAVE_SOURCE_PLAN"; projectId?: string }
   | {
       type: "PUBLISH_REQUIREMENT";
       projectId?: string;
@@ -1217,7 +1347,30 @@ export function workspaceReducer(
             }
           : item,
       );
-      return withProjectState(state, id, { ...ps, sourcePlan });
+      return withProjectState(state, id, {
+        ...ps,
+        sourcePlan,
+        sourcePlanStatus: "stale",
+      });
+    }
+    case "SAVE_SOURCE_PLAN": {
+      const id = projectIdFor(state, action.projectId);
+      const ps = state.projectStates[id];
+      const totalShare = ps.sourcePlan.reduce(
+        (sum, item) => sum + item.share,
+        0,
+      );
+      if (totalShare !== 100) return state;
+      return {
+        ...withProjectState(state, id, { ...ps, sourcePlanStatus: "aligned" }),
+        audit: workspaceAudit(
+          state,
+          "Source plan saved",
+          `${id} saved a 100% sourcing allocation for ${ps.requirements.currentVersion}.`,
+          "Maya Chen",
+          id,
+        ),
+      };
     }
     case "PUBLISH_REQUIREMENT": {
       if (!action.reason.trim()) return state;
@@ -2250,6 +2403,7 @@ export function isWorkspaceState(value: unknown): value is WorkspaceState {
   if (
     !isRecord(value) ||
     value.schemaVersion !== 2 ||
+    value.fixtureRevision !== 2 ||
     !required(value, ["activeProjectId"], "string")
   )
     return false;

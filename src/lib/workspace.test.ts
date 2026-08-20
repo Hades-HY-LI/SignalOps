@@ -271,6 +271,9 @@ describe("dashboard and requirements", () => {
 
   it("edits source plans without leaking changes across projects", () => {
     let state = createInitialWorkspaceState();
+    const naturalnessBefore = state.projectStates[
+      "vocal-naturalness"
+    ].sourcePlan.find((item) => item.source === "vendor");
     state = workspaceReducer(state, {
       type: "EDIT_SOURCE_PLAN_ITEM",
       projectId: "unexpected-vocals",
@@ -288,7 +291,34 @@ describe("dashboard and requirements", () => {
       share: 100,
       estimatedCost: 0,
     });
-    expect(untouched?.targetRecords).toBe(0);
+    expect(untouched).toEqual(naturalnessBefore);
+    expect(state.projectStates["unexpected-vocals"].sourcePlanStatus).toBe(
+      "stale",
+    );
+  });
+
+  it("requires a complete allocation before saving a source plan", () => {
+    let state = createInitialWorkspaceState();
+    state = workspaceReducer(state, {
+      type: "EDIT_SOURCE_PLAN_ITEM",
+      projectId: "vocal-naturalness",
+      source: "vendor",
+      changes: { targetRecords: 7000 },
+    });
+    expect(state.projectStates["vocal-naturalness"].sourcePlanStatus).toBe(
+      "stale",
+    );
+    state = workspaceReducer(state, {
+      type: "SAVE_SOURCE_PLAN",
+      projectId: "vocal-naturalness",
+    });
+    expect(state.projectStates["vocal-naturalness"].sourcePlanStatus).toBe(
+      "aligned",
+    );
+    expect(state.audit.at(-1)).toMatchObject({
+      action: "Source plan saved",
+      projectId: "vocal-naturalness",
+    });
   });
 });
 

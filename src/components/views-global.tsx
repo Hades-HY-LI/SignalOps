@@ -18,6 +18,11 @@ import {
   Users,
 } from "lucide-react";
 import { recommendAllocation, scoreVendor } from "@/lib/domain";
+import {
+  buildDatasetExport,
+  buildEvaluationHandoffPackage,
+  datasetExportRows,
+} from "@/lib/exports";
 import { useWorkspace } from "@/lib/workspace";
 import type {
   Project,
@@ -108,11 +113,18 @@ function Portfolio() {
         }
       />
       <div className="preset-bar">
-        <span>View preset</span>
+        <div className="preset-copy">
+          <strong>Dashboard view</strong>
+          <small>
+            Switches the visible KPI set. Use Widgets to customize it.
+          </small>
+        </div>
         {(["executive", "operations"] as const).map((p) => (
           <button
             key={p}
             className={state.portfolioConfig.preset === p ? "active" : ""}
+            aria-pressed={state.portfolioConfig.preset === p}
+            title={`Show the ${p} dashboard preset`}
             onClick={() =>
               dispatch({
                 type: "SET_DASHBOARD_PRESET",
@@ -975,10 +987,13 @@ function Datasets() {
                       datasetId: dataset.id,
                       format: "json",
                     });
-                    downloadJson(`${dataset.id}.json`, dataset);
+                    downloadJson(
+                      `${dataset.id}-record-manifest.json`,
+                      buildDatasetExport(dataset),
+                    );
                   }}
                 >
-                  <Download size={14} /> JSON
+                  <Download size={14} /> Record manifest JSON
                 </button>
                 <button
                   className="button"
@@ -989,14 +1004,12 @@ function Datasets() {
                       format: "csv",
                     });
                     downloadCsv(
-                      `${dataset.id}.csv`,
-                      Object.entries(dataset.sourceCounts).map(
-                        ([source, count]) => ({ source, count }),
-                      ),
+                      `${dataset.id}-records.csv`,
+                      datasetExportRows(dataset),
                     );
                   }}
                 >
-                  <Download size={14} /> CSV
+                  <Download size={14} /> Record manifest CSV
                 </button>
               </div>
               <h3 className="subsection-title">Download history</h3>
@@ -1014,17 +1027,31 @@ function Datasets() {
               {handoff ? (
                 <div className="notice">
                   <Status value={handoff.status} /> <b>{handoff.method}</b>
-                  <br />
-                  Delivery: {handoff.delivery.replaceAll("_", " ")} · execution
-                  simulated
+                  <p>
+                    This package tells Research or ML which immutable dataset to
+                    read, where each record lives, which metrics to run, and how
+                    to return results.
+                  </p>
+                  <div className="handoff-route">
+                    <span>Dataset manifest</span>
+                    <ArrowRight size={13} />
+                    <span>{handoff.delivery.replaceAll("_", " ")}</span>
+                    <ArrowRight size={13} />
+                    <span>{handoff.owners.join(" + ")}</span>
+                    <ArrowRight size={13} />
+                    <span>Result callback</span>
+                  </div>
                   <div className="button-row">
                     <button
                       className="button small"
                       onClick={() =>
-                        downloadJson(`${handoff.id}.json`, handoff)
+                        downloadJson(
+                          `${handoff.id}-evaluation-package.json`,
+                          buildEvaluationHandoffPackage(dataset, handoff),
+                        )
                       }
                     >
-                      <Download size={13} /> Download handoff
+                      <Download size={13} /> Download complete eval package
                     </button>
                   </div>
                   {handoff.results.map((result) => (
@@ -1167,6 +1194,7 @@ function Datasets() {
 function Registry() {
   const { state, dispatch } = useWorkspace();
   const [kind, setKind] = useState("all");
+  const [guide, setGuide] = useState<string | null>(null);
   const list = state.registryEntries.filter(
     (e) => kind === "all" || e.kind === kind,
   );
@@ -1242,11 +1270,128 @@ function Registry() {
                 </button>
               )}
             </footer>
+            <button
+              className="button connector-guide-button"
+              onClick={() => setGuide(guide === entry.id ? null : entry.id)}
+              aria-expanded={guide === entry.id}
+            >
+              {guide === entry.id ? "Hide connection guide" : "How to connect"}
+            </button>
+            {guide === entry.id ? <ConnectionGuide entry={entry} /> : null}
           </Card>
         ))}
       </div>
     </>
   );
+}
+
+function ConnectionGuide({
+  entry,
+}: {
+  entry: ReturnType<typeof useWorkspace>["state"]["registryEntries"][number];
+}) {
+  const connector = connectorBlueprint(entry.kind, entry.id);
+  return (
+    <div className="connection-guide">
+      <div className="eyebrow">Connection contract</div>
+      <div className="kv">
+        <span>Transport</span>
+        <b>{connector.transport}</b>
+      </div>
+      <div className="kv">
+        <span>Authentication</span>
+        <b>{connector.auth}</b>
+      </div>
+      <div className="kv">
+        <span>Data sent</span>
+        <b>{connector.input}</b>
+      </div>
+      <div className="kv">
+        <span>Data returned</span>
+        <b>{connector.output}</b>
+      </div>
+      <ol>
+        {connector.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <button
+        className="button small"
+        onClick={() =>
+          downloadJson(`${entry.id}-contract.json`, {
+            schema_version: "signalops.connector.v1",
+            registry_entry: entry,
+            connection: connector,
+            execution: "simulated",
+          })
+        }
+      >
+        <Download size={13} /> Download connector contract
+      </button>
+    </div>
+  );
+}
+
+function connectorBlueprint(kind: string, id: string) {
+  if (kind === "workflow")
+    return {
+      transport: "Assigned definition",
+      auth: "Workspace access",
+      input: "Requirement, rubric, source schema",
+      output: "Versioned decisions and QA evidence",
+      steps: [
+        "Assign the definition to a project.",
+        "Map project artifacts to workflow inputs.",
+        "Publish a version, then validate entry and exit criteria.",
+      ],
+    };
+  if (kind === "annotation_platform")
+    return {
+      transport: "REST batch API + webhook",
+      auth: "Scoped bearer token",
+      input: "Work package JSON and signed asset URIs",
+      output: "Completed labels, provenance, and QC metadata",
+      steps: [
+        "Configure the vendor platform endpoint.",
+        "Export a versioned work package.",
+        "Register the delivery webhook and test a synthetic batch.",
+      ],
+    };
+  if (kind === "object_storage")
+    return {
+      transport: "Object-storage manifest",
+      auth: "Short-lived signed URLs",
+      input: "JSONL manifest and media objects",
+      output: "Result manifest under the configured prefix",
+      steps: [
+        "Set input and result prefixes.",
+        "Grant least-privilege read/write access.",
+        "Validate manifest checksums before import.",
+      ],
+    };
+  if (kind === "product_event")
+    return {
+      transport: "Event stream",
+      auth: "Service identity",
+      input: "Explicit and implicit product events",
+      output: "Normalized eligible signals",
+      steps: [
+        "Register the event schema.",
+        "Map consent and eligibility fields.",
+        "Route accepted events into the project quality layer.",
+      ],
+    };
+  return {
+    transport: kind === "webhook" ? "HTTPS webhook" : "REST API",
+    auth: "HMAC signature or scoped token",
+    input: "Versioned request and dataset manifest",
+    output: "Status events and structured results",
+    steps: [
+      `Configure ${id} in the target system.`,
+      "Download and implement the contract below.",
+      "Send a synthetic request and verify the callback payload.",
+    ],
+  };
 }
 
 function FilterSelect({

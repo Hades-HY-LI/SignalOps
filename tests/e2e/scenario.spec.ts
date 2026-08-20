@@ -63,13 +63,15 @@ test("manages a portfolio and completes the interactive release lifecycle", asyn
       "Reduce unexpected vocals below the release threshold for priority slices.",
     );
   await page.getByLabel("Target records").first().fill("5200");
-  await page.locator('input[type="file"]').setInputFiles({
-    name: "alignment-notes.md",
-    mimeType: "text/markdown",
-    buffer: Buffer.from(
-      "# Alignment notes\nValidate priority slices before pilot v2.",
-    ),
-  });
+  await page
+    .locator('.document-origin-panel input[type="file"]')
+    .setInputFiles({
+      name: "alignment-notes.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(
+        "# Alignment notes\nValidate priority slices before pilot v2.",
+      ),
+    });
   await expect(page.getByText("alignment-notes.md")).toBeVisible();
   await page.getByRole("button", { name: "Add", exact: true }).click();
   let reminderDialog = page.getByRole("dialog", {
@@ -212,4 +214,69 @@ test("keeps project switching available at tablet widths", async ({
   await expect(
     page.getByRole("heading", { name: "Vocal Naturalness Preference" }),
   ).toBeVisible();
+});
+
+test("connects requirements, operations, workflows, and evaluation data", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile",
+    "The connected management flow is covered on desktop.",
+  );
+
+  await page.goto("/projects/vocal-naturalness/mission");
+  const releasePreset = page.getByRole("button", {
+    name: "release readiness",
+  });
+  await releasePreset.click();
+  await expect(releasePreset).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Auto-derived", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Requirements" }).click();
+  await expect(page.getByText("Original requirement documents")).toBeVisible();
+  await page.getByLabel("Target records").first().fill("7000");
+  const savePlan = page.getByRole("button", { name: "Save source plan" });
+  await expect(savePlan).toBeEnabled();
+  await savePlan.click();
+  await expect(
+    page.getByText(/Saved in this browser and linked/),
+  ).toBeVisible();
+  await expect(page.getByText("Vendor scorecard connection")).toBeVisible();
+
+  await page.getByRole("link", { name: "Operations" }).click();
+  await expect(page.getByText("Weekly capacity")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "In-house data flow" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Quality-control layers" }),
+  ).toBeVisible();
+  await expect(page.getByText("7,350 accepted records")).toBeVisible();
+
+  await page.getByRole("link", { name: "Workflow" }).click();
+  await expect(page.getByText("Pairwise comparison")).toBeVisible();
+  await expect(page.locator(".workflow-stage")).toHaveCount(3);
+
+  await page.getByRole("link", { name: "Release" }).click();
+  await expect(
+    page.getByRole("button", { name: "Download record manifest JSON" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", {
+      name: "Download complete evaluation package",
+    }),
+  ).toBeEnabled();
+  await expect(
+    page.getByText("Record manifest", { exact: true }),
+  ).toBeVisible();
+
+  await page.goto("/registry");
+  const guideButton = page
+    .getByRole("button", { name: "How to connect" })
+    .first();
+  await guideButton.click();
+  await expect(page.getByText("Connection contract").first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Download connector contract" }).first(),
+  ).toBeEnabled();
 });
