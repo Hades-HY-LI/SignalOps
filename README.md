@@ -4,7 +4,7 @@ SignalOps is a browser-local ML data-operations control plane. It separates work
 
 The prototype is deterministic and resettable. Projects, people, vendors, costs, telemetry, reminders, and external connector activity are fictional and visibly marked as simulated. State transitions, quality calculations, version history, aggregate operations, manifests, lineage, downloads, and promotion gates run in the browser.
 
-Public demo: add the deployment URL after publishing.
+Public demo: [https://signalops-liart.vercel.app](https://signalops-liart.vercel.app)
 
 ## Guided walkthrough
 
