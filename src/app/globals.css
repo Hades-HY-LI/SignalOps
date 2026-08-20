@@ -1002,7 +1002,8 @@ textarea {
   color: #aeb5aa;
   border-radius: 8px;
   text-decoration: none;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.2;
   font-weight: 600;
 }
 .shell-nav a:hover {
@@ -1030,6 +1031,8 @@ textarea {
 }
 .project-links {
   flex: 1;
+  align-content: start;
+  grid-auto-rows: 44px;
   overflow-y: auto;
 }
 .shell-bottom {
