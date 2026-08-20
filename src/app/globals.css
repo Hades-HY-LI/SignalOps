@@ -429,6 +429,10 @@ button:disabled {
   color: #505850;
   background: #e6e8e3;
 }
+.status.not_required {
+  color: #4f5f70;
+  background: #e3e9ed;
+}
 .button {
   min-height: 38px;
   display: inline-flex;
@@ -1227,6 +1231,17 @@ textarea {
 .document-origin-panel > span {
   grid-column: 1 / -1;
 }
+.document-library-inline {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #d8dfd1;
+}
+.document-row {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 7px;
+}
 .compact-upload {
   min-height: 42px;
   padding-inline: 12px;
@@ -1717,6 +1732,9 @@ textarea {
   position: relative;
   top: -90px;
 }
+.anchor-card {
+  position: relative;
+}
 .vendor-fit-strip {
   margin-bottom: 14px;
 }
@@ -1829,6 +1847,40 @@ textarea {
 .workflow-overview .card {
   min-height: 150px;
 }
+.contract-definition {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.contract-definition p {
+  margin: 4px 0 0;
+}
+.checkpoint-panel {
+  margin: 18px 0;
+}
+.status-provenance {
+  margin-bottom: 14px;
+}
+.status-source-grid > div {
+  padding: 12px;
+  background: #eef0ea;
+  border-radius: 8px;
+}
+.status-source-grid b,
+.status-source-grid p {
+  display: block;
+}
+.status-source-grid b {
+  margin-top: 10px;
+  font-size: 10px;
+}
+.status-source-grid p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
 .workflow-route-item {
   display: flex;
   align-items: center;
@@ -1918,14 +1970,14 @@ textarea {
 }
 .release-steps {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 16px;
 }
 .release-steps > div {
-  min-height: 65px;
+  min-height: 180px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   padding: 10px;
   color: var(--muted);
@@ -1946,11 +1998,42 @@ textarea {
 .release-steps small {
   display: block;
 }
+.release-step-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.release-step-copy > .status {
+  margin-top: 7px;
+}
 .release-steps small {
   margin-top: 4px;
   color: var(--muted);
   font-size: 8px;
   font-weight: 400;
+}
+.release-steps .status-source {
+  line-height: 1.45;
+}
+.release-steps .button {
+  min-height: 30px;
+  margin-top: auto;
+  padding: 6px 8px;
+  white-space: normal;
+}
+.release-steps > .blocked {
+  background: #f7eae6;
+  border-color: #e8c9c1;
+}
+.release-steps > .active {
+  background: #f7f0d7;
+  border-color: #e5d6a7;
+}
+.release-steps > .not_required {
+  background: #edf1f3;
+  border-color: #d5dfe4;
 }
 .release-steps .done {
   color: #314324;
@@ -2139,7 +2222,7 @@ textarea {
     min-height: 0;
   }
   .release-steps {
-    grid-template-columns: repeat(5, minmax(95px, 1fr));
+    grid-template-columns: repeat(6, minmax(175px, 1fr));
     overflow-x: auto;
     padding-bottom: 5px;
   }

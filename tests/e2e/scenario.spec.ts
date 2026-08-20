@@ -99,6 +99,7 @@ test("manages a portfolio and completes the interactive release lifecycle", asyn
   await page.getByRole("button", { name: "Publish next version" }).click();
   await expect(page.getByText("Current v4")).toBeVisible();
   await expect(page.getByText("stale", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Save source plan" }).click();
 
   await page.getByRole("link", { name: "Operations" }).click();
   await page.getByRole("button", { name: "Align", exact: true }).click();
@@ -233,7 +234,8 @@ test("connects requirements, operations, workflows, and evaluation data", async 
   await expect(page.getByText("Auto-derived", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Requirements" }).click();
-  await expect(page.getByText("Original requirement documents")).toBeVisible();
+  await expect(page.getByText("Requirement source documents")).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(1);
   await page.getByLabel("Target records").first().fill("7000");
   const savePlan = page.getByRole("button", { name: "Save source plan" });
   await expect(savePlan).toBeEnabled();

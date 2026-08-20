@@ -89,7 +89,7 @@ flowchart TB
 
 ## Requirement and alignment model
 
-Original requirement documents and their structured interpretation are shown together. Requirement edits remain mutable until publishing. Publishing creates an immutable version with author, timestamp, reason, changed fields, and a field-level comparison against the previous version. It automatically marks linked source plans, work packages, rubrics, gold sets, vendor engagements, and workflow stages stale.
+One requirement document library keeps the original brief and supporting source evidence beside its structured interpretation. Requirement edits remain mutable until publishing. Publishing creates an immutable version with author, timestamp, reason, changed fields, and a field-level comparison against the previous version. It automatically marks linked source plans, work packages, rubrics, gold sets, vendor engagements, and workflow stages stale.
 
 Source-plan edits enter an unsaved state and must total 100% before they can be saved. The page exposes planned records, allocation, vendor budget, and a live vendor-scorecard ranking so the sourcing decision is connected to capacity, availability, and vendor performance.
 
@@ -130,7 +130,9 @@ Profiles also show capability tags, modalities, locales, availability, rate band
 
 The global registry contains reusable Q&A, pairwise comparison, ranking, rubric classification, AI-agent review, and product-feedback workflow definitions. Integration entries cover an annotation platform, API, webhook, object-storage batch, and product events. Every entry exposes transport, authentication boundary, input/output data, setup steps, and a downloadable connector contract. The registry does not execute arbitrary code or external calls.
 
-Project workflow pages show the assigned version, owner, entry and exit criteria, dependencies, linked artifacts, and current state. In-house operations use aggregate `InternalWorkBatch` and `InternalOpsSnapshot` records; annotation execution remains in a linkable external platform boundary.
+Project workflow pages describe an operational data-production contract, not legal terms. They show the assigned version, owner, entry and exit criteria, dependencies, linked artifacts, and current state. Live inputs are populated from project requirements, source plans, engagements, batches, QA, datasets, and evaluation records rather than a free-form status field. Unconfigured projects show an assignment prompt instead of treating a placeholder workflow as active.
+
+Workflow and Release share one release-checkpoint selector. It calculates configuration, delivery quality, in-house work, dataset, evaluation, and decision states, and gives every checkpoint an evidence explanation and trace link. `pending` means required evidence is absent; `active` means work is in progress; `blocked` means a gate failed; `complete` means required evidence passed; `aligned` means an artifact references the current requirement; `stale` means it references an older version; and `not required` means an aligned source plan allocates no work to that path. Portfolio health and external engagement facts remain stored inputs; calculated gates are derived from their underlying records.
 
 Dataset JSON and CSV exports contain one manifest row per record with source, version, QA state, lineage origin, and a simulated object-storage URI. Raw media is not embedded in the browser demo. Production would resolve those URIs through signed object-storage access.
 

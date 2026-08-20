@@ -49,7 +49,7 @@ export interface RequirementArtifact {
   name: string;
   version: string;
   owner: string;
-  status: "aligned" | "stale";
+  status: "pending" | "aligned" | "stale";
 }
 
 export interface SourcePlanItem {
@@ -571,7 +571,7 @@ export interface ProjectState {
   missionConfig: MissionControlConfig;
   requirements: RequirementDocument;
   sourcePlan: SourcePlanItem[];
-  sourcePlanStatus: "aligned" | "stale";
+  sourcePlanStatus: "pending" | "aligned" | "stale";
   vendorEngagements: VendorEngagement[];
   internalWorkBatches: InternalWorkBatch[];
   internalOpsSnapshots: InternalOpsSnapshot[];

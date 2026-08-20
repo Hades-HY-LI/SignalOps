@@ -38,6 +38,13 @@ import type {
   VendorProfile,
   WorkspaceState,
 } from "./types";
+import {
+  evaluationEvidenceComplete,
+  getInternalBatchGateStatus,
+  getProjectConfigurationGate,
+} from "./status";
+
+export { getInternalBatchGateStatus } from "./status";
 
 export const WORKSPACE_STORAGE_KEY = "signalops-workspace-v2";
 export const SCENARIO_V1_STORAGE_KEY = "signalops-scenario-v1";
@@ -106,6 +113,7 @@ function initialRequirement(
 function emptyScenario(
   project: Project,
   requirementVersion: string,
+  configured = false,
 ): ScenarioState {
   const scenario = createInitialState();
   return {
@@ -125,7 +133,8 @@ function emptyScenario(
     artifacts: scenario.artifacts.map((artifact) => ({
       ...artifact,
       version: requirementVersion,
-      status: "aligned",
+      status:
+        configured || artifact.id === "request" ? "aligned" : "pending",
     })),
     productSignals: [],
     vendorDecisions: {},
@@ -149,7 +158,7 @@ function initialProjectState(
       : "v1";
   const scenario = interactive
     ? createInitialState()
-    : emptyScenario(project, requirementVersion);
+    : emptyScenario(project, requirementVersion, naturalness);
   return {
     projectId: project.id,
     missionConfig: {
@@ -203,7 +212,8 @@ function initialProjectState(
               turnaround: "Not planned",
             },
     ),
-    sourcePlanStatus: "aligned",
+    sourcePlanStatus:
+      interactive || naturalness ? "aligned" : ("pending" as const),
     vendorEngagements: interactive
       ? [
           {
@@ -962,40 +972,6 @@ function presetWidgets(
   ];
 }
 
-function projectArtifactsAligned(projectState: ProjectState) {
-  const version = projectState.requirements.currentVersion;
-  return (
-    projectState.sourcePlanStatus === "aligned" &&
-    projectState.scenario.program.requirementVersion === version &&
-    projectState.scenario.artifacts.every(
-      (artifact) =>
-        artifact.status === "aligned" && artifact.version === version,
-    ) &&
-    projectState.vendorEngagements.every(
-      (engagement) =>
-        engagement.status !== "stale" &&
-        engagement.requirementVersion === version,
-    ) &&
-    projectState.workflowStages.every((stage) => stage.status !== "stale") &&
-    projectState.internalWorkBatches.every(
-      (batch) => batch.requirementVersion === version,
-    )
-  );
-}
-
-function evaluationEvidenceComplete(handoff: EvaluationHandoff) {
-  const requiredMetrics = [...handoff.targetMetrics, ...handoff.guardrails];
-  const submittedMetrics = new Set(
-    handoff.results.map((result) => result.metric.trim().toLowerCase()),
-  );
-  return (
-    requiredMetrics.length > 0 &&
-    requiredMetrics.every((metric) =>
-      submittedMetrics.has(metric.trim().toLowerCase()),
-    )
-  );
-}
-
 function portfolioChangesForScenario(
   scenario: ScenarioState,
 ): Partial<Project> {
@@ -1071,7 +1047,7 @@ function applyScenarioAction(
   if (
     action.type === "BUILD_RELEASE" &&
     (!internalBatchesReleaseReady(projectState) ||
-      !projectArtifactsAligned(projectState))
+      !getProjectConfigurationGate(state, projectId).ready)
   )
     return state;
   const scenario = scenarioReducer(projectState.scenario, action);
@@ -1080,7 +1056,6 @@ function applyScenarioAction(
     action.type === "ALIGN_REQUIREMENTS"
       ? {
           ...projectState,
-          sourcePlanStatus: "aligned" as const,
           vendorEngagements: projectState.vendorEngagements.map(
             (engagement) => ({
               ...engagement,
@@ -1707,7 +1682,7 @@ export function workspaceReducer(
         dataset.releaseState !== "candidate" ||
         dataset.requirementVersion !==
           state.projectStates[id].requirements.currentVersion ||
-        !projectArtifactsAligned(state.projectStates[id]) ||
+        !getProjectConfigurationGate(state, id).ready ||
         state.evaluationHandoffs.some(
           (item) =>
             item.datasetId === dataset.id && item.status !== "decision_ready",
@@ -1972,7 +1947,7 @@ export function canPromoteDataset(state: WorkspaceState, datasetId: string) {
   if (
     !projectState ||
     dataset.requirementVersion !== projectState.requirements.currentVersion ||
-    !projectArtifactsAligned(projectState)
+    !getProjectConfigurationGate(state, dataset.projectId).ready
   )
     return false;
   const evaluations = state.evaluationHandoffs.filter(
@@ -1990,12 +1965,7 @@ export function canPromoteDataset(state: WorkspaceState, datasetId: string) {
 }
 
 export function internalBatchesReleaseReady(projectState: ProjectState) {
-  return projectState.internalWorkBatches.every(
-    (batch) =>
-      batch.status === "completed" &&
-      typeof batch.aggregateQA === "number" &&
-      batch.aggregateQA >= 0.9,
-  );
+  return getInternalBatchGateStatus(projectState).ready;
 }
 
 export function migrateScenarioV1(scenario: ScenarioState): WorkspaceState {
@@ -2448,7 +2418,8 @@ export function isWorkspaceState(value: unknown): value is WorkspaceState {
       return (
         isRecord(ps) &&
         ps.projectId === project.id &&
-        (ps.sourcePlanStatus === "aligned" ||
+        (ps.sourcePlanStatus === "pending" ||
+          ps.sourcePlanStatus === "aligned" ||
           ps.sourcePlanStatus === "stale") &&
         isRecord(ps.missionConfig) &&
         required(ps.missionConfig, ["preset"], "string") &&

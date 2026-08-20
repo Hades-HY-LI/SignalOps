@@ -40,9 +40,9 @@ import {
 import { DEMO_NOW } from "@/lib/fixtures";
 import {
   canPromoteDataset,
-  internalBatchesReleaseReady,
   useWorkspace,
 } from "@/lib/workspace";
+import { buildReleaseCheckpoints } from "@/lib/status";
 import type {
   EvaluationMetricResult,
   Project,
@@ -319,6 +319,7 @@ function Requirements() {
       "application/json",
       "application/pdf",
     ];
+    const allowedExtensions = ["md", "txt", "json", "pdf"];
     const extension = file.name.split(".").at(-1)?.toLowerCase();
     const inferredType =
       file.type ||
@@ -330,7 +331,12 @@ function Requirements() {
           pdf: "application/pdf",
         } as Record<string, string>
       )[extension ?? ""];
-    if (file.size > 2 * 1024 * 1024 || !allowed.includes(inferredType)) {
+    if (
+      file.size > 2 * 1024 * 1024 ||
+      !extension ||
+      !allowedExtensions.includes(extension) ||
+      !allowed.includes(inferredType)
+    ) {
       setUploadError("Use .md, .txt, .json, or .pdf files up to 2 MB.");
       return;
     }
@@ -402,25 +408,60 @@ function Requirements() {
             </div>
             <div className="document-origin-panel">
               <div>
-                <strong>Original requirement documents</strong>
+                <strong>Requirement source documents</strong>
                 <p>
-                  Upload the source brief here. The structured draft below is a
-                  working interpretation; publishing records an immutable,
-                  field-level version and change reason.
+                  This is the single document library for the source brief and
+                  supporting requirement evidence. The structured fields below
+                  are the working interpretation that receives an immutable
+                  version when published.
                 </p>
               </div>
               <label className="upload-control compact-upload">
-                <Upload size={15} /> Upload source document
+                <Upload size={15} /> Add requirement document
                 <input
                   type="file"
                   accept=".md,.txt,.json,.pdf"
                   onChange={upload}
                 />
               </label>
-              <span className="mono subtle">
-                {req.attachments.length} document
-                {req.attachments.length === 1 ? "" : "s"} linked
-              </span>
+              <div className="document-library-inline">
+                <span className="mono subtle">
+                  {req.attachments.length} document
+                  {req.attachments.length === 1 ? "" : "s"} linked · local
+                  browser storage
+                </span>
+                {uploadError ? (
+                  <p className="error-text" role="alert">
+                    {uploadError}
+                  </p>
+                ) : null}
+                {req.attachments.length ? (
+                  req.attachments.map((attachment) => (
+                    <button
+                      className="list-row document-row"
+                      key={attachment.id}
+                      onClick={() => openAttachment(attachment)}
+                    >
+                      <span>
+                        <strong>{attachment.name}</strong>
+                        <small>
+                          Source document · {attachment.mimeType} ·{" "}
+                          {(attachment.size / 1024).toFixed(1)} KB
+                        </small>
+                      </span>
+                      <span className="button small">
+                        Preview <FileText size={14} />
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="subtle">
+                    No requirement documents linked yet. Files are preserved as
+                    source evidence; their contents are not automatically
+                    parsed or diffed.
+                  </p>
+                )}
+              </div>
             </div>
             <div className="form-stack">
               <label>
@@ -709,52 +750,6 @@ function Requirements() {
                 </div>
               ))}
             </div>
-          </Card>
-          <Card>
-            <div className="card-header">
-              <div>
-                <h3>Document library</h3>
-                <p className="subtle">
-                  Source files stay linked to the requirement while published
-                  field changes remain in version history.
-                </p>
-              </div>
-              <span className="sim-label">Local only</span>
-            </div>
-            <label className="upload-control">
-              <Upload size={16} /> Add document
-              <input
-                type="file"
-                accept=".md,.txt,.json,.pdf"
-                onChange={upload}
-              />
-            </label>
-            {uploadError ? (
-              <p className="error-text" role="alert">
-                {uploadError}
-              </p>
-            ) : null}
-            {req.attachments.length ? (
-              req.attachments.map((a) => (
-                <button
-                  className="list-row"
-                  key={a.id}
-                  onClick={() => openAttachment(a)}
-                >
-                  <span>
-                    <strong>{a.name}</strong>
-                    <small>
-                      {a.mimeType} · {(a.size / 1024).toFixed(1)} KB
-                    </small>
-                  </span>
-                  <span className="button small">
-                    Preview <FileText size={14} />
-                  </span>
-                </button>
-              ))
-            ) : (
-              <p className="subtle">No local attachments yet.</p>
-            )}
           </Card>
         </div>
         <div className="stack">
@@ -1091,7 +1086,8 @@ function Operations() {
             );
           })}
         </Card>
-        <Card>
+        <Card className="anchor-card">
+          <span className="anchor-target" id="in-house" />
           <div className="card-header">
             <div>
               <h3>In-house management</h3>
@@ -1251,7 +1247,8 @@ function Operations() {
           )}
         </Card>
       </div>
-      <Card className="route-section">
+      <Card className="route-section anchor-card">
+        <span className="anchor-target" id="quality-control" />
         <div className="card-header">
           <div>
             <h3>{project.name} delivery quality control</h3>
@@ -1529,53 +1526,113 @@ function QualityFunnel({
   );
 }
 
+function ReleaseCheckpointPanel({
+  checkpoints,
+  title = "Release checkpoints",
+}: {
+  checkpoints: ReturnType<typeof buildReleaseCheckpoints>["checkpoints"];
+  title?: string;
+}) {
+  return (
+    <section className="checkpoint-panel" aria-label={title}>
+      <div className="section-label-row">
+        <div>
+          <strong>{title}</strong>
+          <p>
+            Calculated from linked project evidence. Open any checkpoint to
+            inspect its source or resolve its blocker.
+          </p>
+        </div>
+      </div>
+      <div className="release-steps">
+        {checkpoints.map((checkpoint) => (
+          <Step key={checkpoint.id} {...checkpoint} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Workflow() {
   const { state, ps, project, id } = useProjectContext();
   const assigned = state.registryEntries.filter((entry) =>
     entry.assignedProjectIds.includes(id),
   );
   const primary = assigned.find((entry) => entry.kind === "workflow");
+  const { checkpoints } = buildReleaseCheckpoints(state, id);
+  const plannedRecords = ps.sourcePlan.reduce(
+    (sum, item) => sum + item.targetRecords,
+    0,
+  );
   return (
     <>
       <PageIntro
         eyebrow="Project / Workflow"
-        title="Lifecycle definition"
-        description="Versioned stages, owners, dependencies, and artifact links for this project."
+        title="Data production lifecycle"
+        description="The operational contract that defines how selected records become quality-approved, evaluation-ready dataset versions."
         actions={<ProjectBadge project={project} />}
       />
+      <div className="notice contract-definition">
+        <Layers3 size={18} />
+        <div>
+          <strong>This is an operational data contract, not a legal contract.</strong>
+          <p>
+            It connects requirement versions, sourcing, collection, quality
+            evidence, dataset creation, and evaluation. Statuses are populated
+            from those linked records; users update the underlying work on its
+            owning page instead of manually choosing a green or red label.
+          </p>
+        </div>
+      </div>
       <div className="workflow-overview">
         <Card>
-          <div className="eyebrow">Purpose</div>
-          <h3>{primary?.name ?? "Workflow not assigned"}</h3>
+          <div className="eyebrow">Assigned workflow</div>
+          <h3>{primary?.name ?? "No workflow assigned"}</h3>
           <p>
-            Converts records selected by the source plan into versioned labels,
-            QA evidence, and an eligible dataset release.
+            {primary
+              ? `${primary.version} controls the collection and evidence contract for this project.`
+              : "Choose a reusable workflow before collection starts. Placeholder stages are not treated as configured work."}
           </p>
+          {!primary ? (
+            <Link className="button" href="/registry">
+              Open Registry <ArrowRight size={13} />
+            </Link>
+          ) : null}
         </Card>
         <Card>
-          <div className="eyebrow">Inputs</div>
+          <div className="eyebrow">Live inputs · auto-populated</div>
           <div className="tag-row">
             <span className="tag">
               Requirement {ps.requirements.currentVersion}
             </span>
+            <span className="tag">Source plan · {ps.sourcePlanStatus}</span>
             <span className="tag">
-              {ps.sourcePlan
-                .reduce((sum, item) => sum + item.targetRecords, 0)
-                .toLocaleString()}{" "}
-              planned records
+              {plannedRecords.toLocaleString()} planned records
             </span>
             <span className="tag">
               {ps.vendorEngagements.length} vendor engagement(s)
             </span>
+            <span className="tag">
+              {ps.internalWorkBatches.length} in-house batch(es)
+            </span>
           </div>
+          <p className="source-note">
+            Sources: current requirement, saved source plan, vendor
+            engagements, and in-house operations.
+          </p>
         </Card>
         <Card>
-          <div className="eyebrow">Outputs</div>
+          <div className="eyebrow">Evidence outputs · auto-populated</div>
           <div className="tag-row">
             <span className="tag">Decision records</span>
             <span className="tag">QA report</span>
             <span className="tag">Dataset manifest</span>
+            <span className="tag">Evaluation result</span>
           </div>
+          <p className="source-note">
+            Outputs appear only when their source workflow creates immutable
+            evidence.
+          </p>
         </Card>
       </div>
       <div className="workflow-data-route" aria-label="Project workflow path">
@@ -1593,7 +1650,50 @@ function Workflow() {
           </div>
         ))}
       </div>
-      {ps.workflowStages.length ? (
+      <ReleaseCheckpointPanel
+        checkpoints={checkpoints}
+        title="Release readiness inside this lifecycle"
+      />
+      <Card className="status-provenance">
+        <div className="card-header">
+          <div>
+            <h3>How status is sourced</h3>
+            <p className="subtle">
+              Badges summarize stored facts or calculated evidence; they are
+              not free-form labels.
+            </p>
+          </div>
+          <span className="calc-label sim-label">Explainable state</span>
+        </div>
+        <div className="grid grid-4 status-source-grid">
+          <div>
+            <Status value="aligned" />
+            <b>Requirement alignment</b>
+            <p>Version equality after publishing and source-plan saving.</p>
+          </div>
+          <div>
+            <Status value="active" />
+            <b>Operational progress</b>
+            <p>Engagement, batch, QA, handoff, and decision records.</p>
+          </div>
+          <div>
+            <Status value="blocked" />
+            <b>Failed evidence</b>
+            <p>Critical QA, aggregate-QA, or evaluation guardrail failures.</p>
+          </div>
+          <div>
+            <Status value="simulated" />
+            <b>Demo-only facts</b>
+            <p>Seed fixtures and connector execution marked as simulated.</p>
+          </div>
+        </div>
+        <p className="source-note">
+          In this prototype, actions update versioned browser-local state. In a
+          production deployment, the same selectors would consume vendor,
+          annotation-platform, warehouse, and evaluation-system events.
+        </p>
+      </Card>
+      {primary ? (
         <div className="workflow-timeline">
           {ps.workflowStages.map((stage, index) => (
             <Card key={stage.id} className="workflow-stage">
@@ -1607,22 +1707,25 @@ function Workflow() {
                     {stage.version} · {stage.owner}
                   </p>
                 </div>
-                <Status value={stage.status} />
+                <Status
+                  value={stage.status}
+                  detail="Project workflow configuration state. Publishing a new requirement marks the stage stale until it is reviewed."
+                />
               </div>
               <div className="grid grid-2">
                 <div>
                   <div className="eyebrow">Entry criteria</div>
                   <ul>
-                    {stage.entryCriteria.map((x) => (
-                      <li key={x}>{x}</li>
+                    {stage.entryCriteria.map((criterion) => (
+                      <li key={criterion}>{criterion}</li>
                     ))}
                   </ul>
                 </div>
                 <div>
                   <div className="eyebrow">Exit criteria</div>
                   <ul>
-                    {stage.exitCriteria.map((x) => (
-                      <li key={x}>{x}</li>
+                    {stage.exitCriteria.map((criterion) => (
+                      <li key={criterion}>{criterion}</li>
                     ))}
                   </ul>
                 </div>
@@ -1646,14 +1749,14 @@ function Workflow() {
                 </div>
               </div>
               <div className="tag-row">
-                {stage.dependencies.map((x) => (
-                  <span className="tag" key={x}>
-                    Depends on {x}
+                {stage.dependencies.map((dependency) => (
+                  <span className="tag" key={dependency}>
+                    Depends on {dependency}
                   </span>
                 ))}
-                {stage.linkedArtifactIds.map((x) => (
-                  <span className="tag" key={x}>
-                    Artifact · {x}
+                {stage.linkedArtifactIds.map((artifactId) => (
+                  <span className="tag" key={artifactId}>
+                    Artifact · {artifactId}
                   </span>
                 ))}
               </div>
@@ -1663,8 +1766,13 @@ function Workflow() {
       ) : (
         <EmptyState
           icon={<Layers3 />}
-          title="No workflow configured"
-          text="Publish a requirement, then assign a registry workflow."
+          title="No lifecycle workflow assigned"
+          text="Assign a reusable workflow from the Registry. Until then, SignalOps shows live inputs and release blockers without presenting a placeholder workflow as configured work."
+          action={
+            <Link className="button primary" href="/registry">
+              Assign workflow <ArrowRight size={13} />
+            </Link>
+          }
         />
       )}
     </>
@@ -1778,19 +1886,22 @@ function Release() {
   const { state, project, ps, id, dispatch } = useProjectContext();
   const scenario = ps.scenario;
   const eligibility = getReleaseEligibility(scenario);
-  const batchesReady = internalBatchesReleaseReady(ps);
-  const dataset =
-    state.datasets.find(
-      (d) => d.projectId === id && d.id === scenario.release?.id,
-    ) ??
-    state.datasets.find(
-      (d) =>
-        d.projectId === id &&
-        d.requirementVersion === ps.requirements.currentVersion,
-    );
-  const handoff = state.evaluationHandoffs.find(
-    (h) => h.datasetId === dataset?.id,
+  const { checkpoints, dataset, handoff } = buildReleaseCheckpoints(state, id);
+  const prerequisiteCheckpoints = checkpoints.filter((checkpoint) =>
+    ["configuration", "quality", "internal"].includes(checkpoint.id),
   );
+  const releasePrerequisitesReady = prerequisiteCheckpoints.every(
+    (checkpoint) =>
+      checkpoint.status === "complete" ||
+      checkpoint.status === "not_required",
+  );
+  const releaseBlockers = prerequisiteCheckpoints
+    .filter(
+      (checkpoint) =>
+        checkpoint.status !== "complete" &&
+        checkpoint.status !== "not_required",
+    )
+    .map((checkpoint) => checkpoint.detail);
   const [rationale, setRationale] = useState("");
   const [resultValue, setResultValue] = useState("5.4");
   const [guardrailValue, setGuardrailValue] = useState("73.4");
@@ -1852,54 +1963,10 @@ function Release() {
         description="Create a traceable dataset, complete the evaluation lifecycle, then promote or hold with rationale."
         actions={<ProjectBadge project={project} />}
       />
-      <div className="section-label-row">
-        <div>
-          <strong>Release gate status</strong>
-          <p>
-            Read-only progress. Complete the linked work below to advance each
-            gate.
-          </p>
-        </div>
-      </div>
-      <div className="release-steps">
-        <Step
-          label="Quality"
-          done={!!scenario.qaReport?.passed || dataset?.qaStatus === "passed"}
-          detail={
-            scenario.qaReport?.passed || dataset?.qaStatus === "passed"
-              ? "QA gates passed"
-              : "Complete delivery QA"
-          }
-        />
-        <Step
-          label="In-house batches"
-          done={batchesReady}
-          detail={
-            batchesReady ? "Aggregate QA passed" : "Sync and import results"
-          }
-        />
-        <Step
-          label="Dataset"
-          done={!!dataset}
-          detail={dataset ? dataset.version : "Build immutable release"}
-        />
-        <Step
-          label="Evaluation"
-          done={handoff?.status === "decision_ready"}
-          detail={
-            handoff ? handoff.status.replaceAll("_", " ") : "Create handoff"
-          }
-        />
-        <Step
-          label="Decision"
-          done={
-            dataset?.releaseState === "promoted" ||
-            dataset?.releaseState === "held"
-          }
-        />
-      </div>
+      <ReleaseCheckpointPanel checkpoints={checkpoints} />
       <div className="grid grid-2">
-        <Card>
+        <Card className="anchor-card" >
+          <span className="anchor-target" id="dataset-release" />
           <div className="card-header">
             <div>
               <h3>Dataset release</h3>
@@ -1964,19 +2031,26 @@ function Release() {
             <EmptyState
               icon={<Database />}
               title="Release not built"
-              text={`${eligibility.eligible ? "Scenario is eligible" : `${eligibility.vendorPassed ? "" : "Vendor QA must pass. "} ${eligibility.internalComplete ? "" : "Internal review must complete."}`}${!batchesReady ? " · Aggregate in-house batch QA is required." : ""}`}
+              text={
+                releaseBlockers.join(" ") ||
+                (eligibility.eligible
+                  ? "All release prerequisites are satisfied."
+                  : `${eligibility.vendorPassed ? "" : "Vendor QA must pass. "}${eligibility.internalComplete ? "" : "Internal review must complete."}`)
+              }
               action={
                 <div className="button-row">
                   <button
                     className="button primary"
-                    disabled={!eligibility.eligible || !batchesReady}
+                    disabled={
+                      !eligibility.eligible || !releasePrerequisitesReady
+                    }
                     onClick={() =>
                       dispatch({ type: "BUILD_RELEASE", projectId: id })
                     }
                   >
                     <PackageCheck size={14} /> Build release
                   </button>
-                  {!eligibility.eligible || !batchesReady ? (
+                  {!eligibility.eligible || !releasePrerequisitesReady ? (
                     <Link
                       className="button"
                       href={`/projects/${id}/operations`}
@@ -1989,7 +2063,8 @@ function Release() {
             />
           )}
         </Card>
-        <Card>
+        <Card className="anchor-card">
+          <span className="anchor-target" id="evaluation-handoff" />
           <div className="card-header">
             <div>
               <h3>Evaluation handoff</h3>
@@ -2155,80 +2230,121 @@ function Release() {
           )}
         </Card>
       </div>
-      {dataset && dataset.releaseState === "candidate" ? (
-        <Card className="route-section">
-          <div className="card-header">
-            <div>
-              <h3>Final decision</h3>
-              <p className="subtle">
-                A rationale is mandatory for both promotion and hold.
-              </p>
-            </div>
+      <Card className="route-section anchor-card">
+        <span className="anchor-target" id="release-decision" />
+        <div className="card-header">
+          <div>
+            <h3>Final decision</h3>
+            <p className="subtle">
+              A rationale is mandatory for both promotion and hold.
+            </p>
+          </div>
+          {dataset?.releaseState === "candidate" ? (
             <Status
               value={
                 canPromoteDataset(state, dataset.id) ? "complete" : "pending"
               }
             />
+          ) : (
+            <Status value={dataset?.releaseState ?? "pending"} />
+          )}
+        </div>
+        {dataset?.releaseState === "candidate" ? (
+          <>
+            <label>
+              Decision rationale
+              <textarea
+                value={rationale}
+                onChange={(e) => setRationale(e.target.value)}
+                placeholder="Record the evidence behind this decision…"
+              />
+            </label>
+            <div className="button-row">
+              <button
+                className="button dark"
+                disabled={
+                  !rationale.trim() || !canPromoteDataset(state, dataset.id)
+                }
+                onClick={() =>
+                  dispatch({
+                    type: "PROMOTE_DATASET",
+                    datasetId: dataset.id,
+                    rationale,
+                  })
+                }
+              >
+                <CheckCircle2 size={14} /> Promote
+              </button>
+              <button
+                className="button danger"
+                disabled={!rationale.trim()}
+                onClick={() =>
+                  dispatch({
+                    type: "HOLD_DATASET",
+                    datasetId: dataset.id,
+                    rationale,
+                  })
+                }
+              >
+                <AlertTriangle size={14} /> Hold
+              </button>
+            </div>
+          </>
+        ) : dataset ? (
+          <div className="notice">
+            <strong>
+              {dataset.releaseState === "promoted"
+                ? "Dataset promoted"
+                : "Dataset held"}
+            </strong>
+            <p>{dataset.latestDecision}</p>
           </div>
-          <label>
-            Decision rationale
-            <textarea
-              value={rationale}
-              onChange={(e) => setRationale(e.target.value)}
-              placeholder="Record the evidence behind this decision…"
-            />
-          </label>
-          <div className="button-row">
-            <button
-              className="button dark"
-              disabled={
-                !rationale.trim() || !canPromoteDataset(state, dataset.id)
-              }
-              onClick={() =>
-                dispatch({
-                  type: "PROMOTE_DATASET",
-                  datasetId: dataset.id,
-                  rationale,
-                })
-              }
-            >
-              <CheckCircle2 size={14} /> Promote
-            </button>
-            <button
-              className="button danger"
-              disabled={!rationale.trim()}
-              onClick={() =>
-                dispatch({
-                  type: "HOLD_DATASET",
-                  datasetId: dataset.id,
-                  rationale,
-                })
-              }
-            >
-              <AlertTriangle size={14} /> Hold
-            </button>
-          </div>
-        </Card>
-      ) : null}
+        ) : (
+          <EmptyState
+            icon={<ClipboardCheck />}
+            title="Decision not available"
+            text="Build the immutable dataset and complete its required evaluation before recording a promote or hold decision."
+            action={
+              <Link className="button" href={`/projects/${id}/operations`}>
+                Review prerequisites <ArrowRight size={13} />
+              </Link>
+            }
+          />
+        )}
+      </Card>
     </>
   );
 }
 
 function Step({
   label,
-  done,
+  status,
   detail,
+  source,
+  href,
+  action,
 }: {
   label: string;
-  done: boolean;
-  detail?: string;
+  status: ReturnType<typeof buildReleaseCheckpoints>["checkpoints"][number]["status"];
+  detail: string;
+  source: string;
+  href: string;
+  action: string;
 }) {
+  const done = status === "complete";
   return (
-    <div className={done ? "done" : ""}>
-      <span>{done ? <Check size={13} /> : null}</span>
-      <div>
+    <div className={`release-step ${status} ${done ? "done" : ""}`}>
+      <span>
+        {done ? <Check size={13} /> : status === "not_required" ? "—" : null}
+      </span>
+      <div className="release-step-copy">
         <b>{label}</b>
-        {detail ? <small>{detail}</small> : null}
+        <Status value={status} detail={source} />
+        <small>{detail}</small>
+        <small className="status-source">Source: {source}</small>
+        <Link className="button small" href={href}>
+          {action} <ArrowRight size={12} />
+        </Link>
       </div>
     </div>
   );

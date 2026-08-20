@@ -5,6 +5,7 @@ import type { RequirementAttachment, VendorMetrics } from "./types";
 import {
   canPromoteDataset,
   createInitialWorkspaceState,
+  getInternalBatchGateStatus,
   internalBatchesReleaseReady,
   isWorkspaceState,
   migrateScenarioV1,
@@ -374,6 +375,43 @@ describe("shared vendors and internal operations", () => {
       internalBatchesReleaseReady(state.projectStates["unexpected-vocals"]),
     ).toBe(true);
   });
+
+  it("distinguishes an unneeded in-house source from missing required batches", () => {
+    const state = createInitialWorkspaceState();
+    const emptyProject =
+      state.projectStates["multilingual-prompt-adherence"];
+    expect(getInternalBatchGateStatus(emptyProject)).toMatchObject({
+      status: "pending",
+      ready: false,
+    });
+
+    const externalOnlyPlan = {
+      ...emptyProject,
+      sourcePlanStatus: "aligned" as const,
+      sourcePlan: emptyProject.sourcePlan.map((item) =>
+        item.source === "vendor"
+          ? { ...item, targetRecords: 100, share: 100 }
+          : item,
+      ),
+    };
+    expect(getInternalBatchGateStatus(externalOnlyPlan)).toMatchObject({
+      status: "not_required",
+      ready: true,
+    });
+
+    const internalPlanned = {
+      ...emptyProject,
+      sourcePlan: emptyProject.sourcePlan.map((item) =>
+        item.source === "internal"
+          ? { ...item, targetRecords: 100, share: 100 }
+          : item,
+      ),
+    };
+    expect(getInternalBatchGateStatus(internalPlanned)).toMatchObject({
+      status: "pending",
+      ready: false,
+    });
+  });
 });
 
 describe("dataset and evaluation lifecycle", () => {
@@ -498,6 +536,7 @@ describe("dataset and evaluation lifecycle", () => {
   it("keeps immutable dataset identities unique across requirement cycles", () => {
     let state = createInitialWorkspaceState();
     const completeCycle = () => {
+      state = workspaceReducer(state, { type: "SAVE_SOURCE_PLAN" });
       state = workspaceReducer(state, { type: "ALIGN_REQUIREMENTS" });
       state = workspaceReducer(state, { type: "ACTIVATE_SOURCES" });
       state = workspaceReducer(state, { type: "RUN_QA" });
