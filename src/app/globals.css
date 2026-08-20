@@ -1838,14 +1838,208 @@ textarea {
   grid-column: 1 / -1;
   width: max-content;
 }
-.workflow-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+.workflow-contract-row {
   margin-bottom: 12px;
 }
-.workflow-overview .card {
-  min-height: 150px;
+.workflow-contract-card {
+  min-height: 0;
+}
+.workflow-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 20px;
+}
+.workflow-metric-grid > div {
+  min-width: 0;
+  padding: 12px;
+  background: #eef0ea;
+  border: 1px solid #dde2d9;
+  border-radius: 9px;
+}
+.workflow-metric-grid span,
+.workflow-metric-grid strong,
+.workflow-metric-grid small {
+  display: block;
+}
+.workflow-metric-grid span {
+  color: var(--muted);
+  font: 600 8px/1.2 var(--font-mono);
+  text-transform: uppercase;
+}
+.workflow-metric-grid strong {
+  margin: 6px 0 4px;
+  font-size: 22px;
+}
+.workflow-metric-grid small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+}
+.live-lifecycle {
+  margin: 20px 0;
+}
+.lifecycle-stage-list {
+  display: grid;
+  gap: 12px;
+}
+.lifecycle-stage-card {
+  padding: 18px;
+}
+.lifecycle-stage-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.lifecycle-stage-heading > span {
+  color: #71854b;
+  font: 500 18px/1 var(--font-mono);
+}
+.lifecycle-stage-heading h3,
+.lifecycle-stage-heading p {
+  margin: 0;
+}
+.lifecycle-stage-heading p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.lifecycle-io {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin: 15px 0;
+  padding: 12px;
+  background: #eef0ea;
+  border-radius: 8px;
+}
+.lifecycle-io span,
+.lifecycle-io strong {
+  display: block;
+}
+.lifecycle-io span {
+  color: var(--muted);
+  font: 500 8px/1.3 var(--font-mono);
+  text-transform: uppercase;
+}
+.lifecycle-io strong {
+  margin-top: 5px;
+  font-size: 18px;
+}
+.lifecycle-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 9px;
+}
+.lifecycle-progress-row .progress {
+  grid-column: 1 / -1;
+}
+.lifecycle-criteria-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.lifecycle-criteria {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.lifecycle-criteria > div:not(.eyebrow) {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-top: 8px;
+}
+.lifecycle-criteria > div:not(.eyebrow) > span {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #c9cec4;
+  border-radius: 50%;
+}
+.lifecycle-criteria .met > span {
+  color: #1d2b13;
+  background: var(--lime);
+  border-color: var(--lime);
+}
+.lifecycle-criteria small {
+  font-size: 9px;
+  line-height: 1.4;
+}
+.lifecycle-criteria .unmet small {
+  color: var(--muted);
+}
+.lifecycle-blocker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px;
+  background: #eef0ea;
+  border-radius: 8px;
+}
+.lifecycle-blocker.blocked {
+  background: #f5e7e2;
+}
+.lifecycle-blocker > span,
+.lifecycle-blocker p {
+  grid-column: 1;
+}
+.lifecycle-blocker > span {
+  color: var(--muted);
+  font: 600 8px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.lifecycle-blocker p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.lifecycle-blocker .button {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+.release-readiness-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.4fr) auto;
+  gap: 18px;
+  align-items: center;
+  margin: 18px 0;
+  padding: 18px;
+  color: white;
+  background: #1c211a;
+  border-radius: 12px;
+}
+.release-readiness-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+}
+.release-readiness-summary p {
+  margin: 6px 0 0;
+  color: #bfc6bb;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.release-readiness-progress > span {
+  display: block;
+  margin-bottom: 6px;
+  text-align: right;
+  font-size: 9px;
+}
+.release-readiness-summary .progress {
+  background: #394035;
+}
+.workflow-definition-label {
+  margin-top: 22px;
 }
 .contract-definition {
   display: flex;
@@ -2282,10 +2476,19 @@ textarea {
     grid-column: 1 / -1;
   }
   .document-origin-panel,
-  .workflow-overview,
   .stage-evidence-grid,
   .quality-funnel {
     grid-template-columns: 1fr;
+  }
+  .workflow-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lifecycle-criteria-grid,
+  .release-readiness-summary {
+    grid-template-columns: 1fr;
+  }
+  .release-readiness-progress > span {
+    text-align: left;
   }
   .ops-data-route {
     align-items: stretch;
@@ -2309,5 +2512,26 @@ textarea {
   }
   .metric-breakdown > div {
     grid-template-columns: 82px minmax(0, 1fr) 26px;
+  }
+  .lifecycle-stage-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .lifecycle-stage-heading .status {
+    grid-column: 2;
+    width: max-content;
+  }
+  .lifecycle-io {
+    grid-template-columns: 1fr;
+  }
+  .lifecycle-io > svg {
+    transform: rotate(90deg);
+  }
+  .lifecycle-blocker {
+    grid-template-columns: 1fr;
+  }
+  .lifecycle-blocker .button {
+    grid-column: 1;
+    grid-row: auto;
+    width: max-content;
   }
 }

@@ -120,7 +120,7 @@ test("manages a portfolio and completes the interactive release lifecycle", asyn
   await page.getByRole("button", { name: "Import results" }).click();
   await expect(page.getByText("94% QA")).toBeVisible();
 
-  await page.getByRole("link", { name: "Release" }).click();
+  await page.getByRole("link", { name: "Release", exact: true }).click();
   await page.getByRole("button", { name: "Build release" }).click();
   await page.getByRole("button", { name: "Create handoff" }).click();
   await page.getByRole("button", { name: /Advance to accepted/ }).click();
@@ -257,9 +257,18 @@ test("connects requirements, operations, workflows, and evaluation data", async 
 
   await page.getByRole("link", { name: "Workflow" }).click();
   await expect(page.getByText("Pairwise comparison")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Live workflow metrics" }),
+  ).toBeVisible();
+  await expect(page.locator(".lifecycle-stage-card")).toHaveCount(5);
+  await expect(page.locator(".checkpoint-panel")).toHaveCount(0);
+  await expect(page.getByText(/gates satisfied/)).toBeVisible();
   await expect(page.locator(".workflow-stage")).toHaveCount(3);
 
-  await page.getByRole("link", { name: "Release" }).click();
+  await page.getByRole("link", { name: "Release", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Release checkpoints" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Download record manifest JSON" }),
   ).toBeEnabled();

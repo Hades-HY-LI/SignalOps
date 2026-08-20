@@ -42,7 +42,10 @@ import {
   canPromoteDataset,
   useWorkspace,
 } from "@/lib/workspace";
-import { buildReleaseCheckpoints } from "@/lib/status";
+import {
+  buildReleaseCheckpoints,
+  type EvidenceStatus,
+} from "@/lib/status";
 import type {
   EvaluationMetricResult,
   Project,
@@ -1553,17 +1556,315 @@ function ReleaseCheckpointPanel({
   );
 }
 
+interface LifecycleStageView {
+  id: string;
+  name: string;
+  owner: string;
+  status: EvidenceStatus;
+  inputLabel: string;
+  inputValue: string;
+  outputLabel: string;
+  outputValue: string;
+  progress: number;
+  entryCriteria: Array<{ label: string; met: boolean }>;
+  exitCriteria: Array<{ label: string; met: boolean }>;
+  blocker: string;
+  href: string;
+  action: string;
+}
+
+function LifecycleCriteria({
+  title,
+  criteria,
+}: {
+  title: string;
+  criteria: LifecycleStageView["entryCriteria"];
+}) {
+  return (
+    <div className="lifecycle-criteria">
+      <div className="eyebrow">{title}</div>
+      {criteria.map((criterion) => (
+        <div className={criterion.met ? "met" : "unmet"} key={criterion.label}>
+          <span>{criterion.met ? <Check size={11} /> : "–"}</span>
+          <small>{criterion.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LifecycleStageCard({
+  stage,
+  index,
+}: {
+  stage: LifecycleStageView;
+  index: number;
+}) {
+  return (
+    <Card className="lifecycle-stage-card">
+      <div className="lifecycle-stage-heading">
+        <span>{String(index + 1).padStart(2, "0")}</span>
+        <div>
+          <h3>{stage.name}</h3>
+          <p>{stage.owner}</p>
+        </div>
+        <Status value={stage.status} />
+      </div>
+      <div className="lifecycle-io">
+        <div>
+          <span>Input · {stage.inputLabel}</span>
+          <strong>{stage.inputValue}</strong>
+        </div>
+        <ArrowRight size={16} />
+        <div>
+          <span>Output · {stage.outputLabel}</span>
+          <strong>{stage.outputValue}</strong>
+        </div>
+      </div>
+      <div className="lifecycle-progress-row">
+        <span>Stage progress</span>
+        <b>{Math.round(stage.progress)}%</b>
+        <div className="progress">
+          <i style={{ width: `${Math.min(100, Math.max(0, stage.progress))}%` }} />
+        </div>
+      </div>
+      <div className="lifecycle-criteria-grid">
+        <LifecycleCriteria title="Entry criteria" criteria={stage.entryCriteria} />
+        <LifecycleCriteria title="Exit criteria" criteria={stage.exitCriteria} />
+      </div>
+      <div className={`lifecycle-blocker ${stage.status}`}>
+        <span>{stage.status === "complete" ? "Evidence" : "Current blocker"}</span>
+        <p>{stage.blocker}</p>
+        <Link className="button small" href={stage.href}>
+          {stage.action} <ArrowRight size={12} />
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
 function Workflow() {
   const { state, ps, project, id } = useProjectContext();
   const assigned = state.registryEntries.filter((entry) =>
     entry.assignedProjectIds.includes(id),
   );
   const primary = assigned.find((entry) => entry.kind === "workflow");
-  const { checkpoints } = buildReleaseCheckpoints(state, id);
+  const { checkpoints, dataset, handoff } = buildReleaseCheckpoints(state, id);
   const plannedRecords = ps.sourcePlan.reduce(
     (sum, item) => sum + item.targetRecords,
     0,
   );
+  const qa = ps.scenario.qaReport;
+  const receivedRecords = qa
+    ? qa.acceptedCount + qa.blockedCount
+    : (dataset?.recordCount ?? project.recordVolume);
+  const acceptedRecords = dataset?.recordCount ?? qa?.acceptedCount ?? 0;
+  const rejectedRecords = qa?.blockedCount ?? 0;
+  const snapshot = ps.internalOpsSnapshots.at(-1);
+  const vendorThroughput = state.vendorPilots
+    .filter((pilot) => pilot.projectId === id)
+    .reduce((sum, pilot) => sum + pilot.throughputPerDay, 0);
+  const dailyThroughput = vendorThroughput + (snapshot?.dailyThroughput ?? 0);
+  const backlog =
+    snapshot?.backlog ?? Math.max(0, plannedRecords - receivedRecords);
+  const satisfiedCheckpoints = checkpoints.filter(
+    (checkpoint) =>
+      checkpoint.status === "complete" ||
+      checkpoint.status === "not_required",
+  ).length;
+  const nextCheckpoint = checkpoints.find(
+    (checkpoint) =>
+      checkpoint.status !== "complete" &&
+      checkpoint.status !== "not_required",
+  );
+  const checkpoint = (checkpointId: string) =>
+    checkpoints.find((item) => item.id === checkpointId)!;
+  const configuration = checkpoint("configuration");
+  const quality = checkpoint("quality");
+  const internal = checkpoint("internal");
+  const datasetCheckpoint = checkpoint("dataset");
+  const evaluation = checkpoint("evaluation");
+  const decision = checkpoint("decision");
+  const collectionStatus: EvidenceStatus =
+    plannedRecords === 0
+      ? "pending"
+      : receivedRecords >= plannedRecords
+        ? "complete"
+        : receivedRecords > 0
+          ? "active"
+          : configuration.status === "complete"
+            ? "active"
+            : "pending";
+  const collectionProgress = plannedRecords
+    ? (receivedRecords / plannedRecords) * 100
+    : 0;
+  const qualityProgress = qa
+    ? (qa.gates.filter((gate) => gate.passed).length / qa.gates.length) * 100
+    : dataset?.qaStatus === "passed"
+      ? 100
+      : 0;
+  const evaluationSteps = [
+    "requested",
+    "accepted",
+    "running",
+    "results_submitted",
+    "decision_ready",
+  ];
+  const evaluationProgress = handoff
+    ? ((evaluationSteps.indexOf(handoff.status) + 1) / evaluationSteps.length) *
+      100
+    : 0;
+  const processStages: LifecycleStageView[] = [
+    {
+      id: "planning",
+      name: "Requirement & source plan",
+      owner: ps.requirements.draft.owner,
+      status: configuration.status,
+      inputLabel: "source documents",
+      inputValue: `${ps.requirements.attachments.length} linked`,
+      outputLabel: "planned records",
+      outputValue: plannedRecords.toLocaleString(),
+      progress: configuration.status === "complete" ? 100 : ps.requirements.versions.length ? 50 : 0,
+      entryCriteria: [
+        {
+          label: `Published requirement ${ps.requirements.currentVersion}`,
+          met: ps.requirements.versions.length > 0,
+        },
+      ],
+      exitCriteria: [
+        {
+          label: "Source allocation is saved and totals 100%",
+          met: ps.sourcePlanStatus === "aligned",
+        },
+        { label: "Reusable workflow is assigned", met: !!primary },
+      ],
+      blocker: configuration.detail,
+      href: configuration.href,
+      action: configuration.status === "complete" ? "Inspect contract" : "Resolve setup",
+    },
+    {
+      id: "collection",
+      name: "Vendor / in-house collection",
+      owner: project.owner,
+      status: collectionStatus,
+      inputLabel: "target records",
+      inputValue: plannedRecords.toLocaleString(),
+      outputLabel: "received records",
+      outputValue: receivedRecords.toLocaleString(),
+      progress: collectionProgress,
+      entryCriteria: [
+        {
+          label: "Configuration contract is complete",
+          met: configuration.status === "complete",
+        },
+        {
+          label: "A source path has non-zero allocation",
+          met: ps.sourcePlan.some((item) => item.targetRecords > 0),
+        },
+      ],
+      exitCriteria: [
+        { label: "At least one delivery is received", met: receivedRecords > 0 },
+        {
+          label: "Planned collection volume is satisfied",
+          met: plannedRecords > 0 && receivedRecords >= plannedRecords,
+        },
+      ],
+      blocker:
+        collectionStatus === "complete"
+          ? `${receivedRecords.toLocaleString()} records are available for quality review.`
+          : configuration.status !== "complete"
+            ? configuration.detail
+            : `${Math.max(0, plannedRecords - receivedRecords).toLocaleString()} planned records remain unreceived.`,
+      href: `/projects/${id}/operations`,
+      action: "Open operations",
+    },
+    {
+      id: "quality",
+      name: "Layered quality control",
+      owner: project.researchOwner,
+      status: quality.status,
+      inputLabel: "received records",
+      inputValue: receivedRecords.toLocaleString(),
+      outputLabel: "accepted / rejected",
+      outputValue: `${acceptedRecords.toLocaleString()} / ${rejectedRecords.toLocaleString()}`,
+      progress: qualityProgress,
+      entryCriteria: [
+        { label: "Delivery records are available", met: receivedRecords > 0 },
+      ],
+      exitCriteria: [
+        { label: "Delivery QA gates pass", met: quality.status === "complete" },
+        {
+          label: "Required in-house aggregate QA passes",
+          met:
+            internal.status === "complete" ||
+            internal.status === "not_required",
+        },
+      ],
+      blocker:
+        quality.status !== "complete"
+          ? quality.detail
+          : internal.status === "complete" || internal.status === "not_required"
+            ? "Delivery and required in-house quality evidence are release-ready."
+            : internal.detail,
+      href: `/projects/${id}/operations#quality-control`,
+      action: "Inspect quality",
+    },
+    {
+      id: "dataset",
+      name: "Immutable dataset release",
+      owner: project.owner,
+      status: datasetCheckpoint.status,
+      inputLabel: "accepted records",
+      inputValue: acceptedRecords.toLocaleString(),
+      outputLabel: "dataset records",
+      outputValue: (dataset?.recordCount ?? 0).toLocaleString(),
+      progress: dataset ? 100 : quality.status === "complete" ? 60 : 0,
+      entryCriteria: [
+        { label: "Delivery quality passes", met: quality.status === "complete" },
+        {
+          label: "In-house requirement is satisfied",
+          met:
+            internal.status === "complete" ||
+            internal.status === "not_required",
+        },
+      ],
+      exitCriteria: [
+        { label: "Immutable dataset version exists", met: !!dataset },
+        { label: "Record-level lineage is attached", met: !!dataset?.manifest },
+      ],
+      blocker: datasetCheckpoint.detail,
+      href: `/projects/${id}/release#dataset-release`,
+      action: dataset ? "Inspect dataset" : "Open release",
+    },
+    {
+      id: "evaluation",
+      name: "Evaluation & decision",
+      owner: handoff?.owners.join(" + ") ?? project.researchOwner,
+      status: decision.status === "complete" ? "complete" : evaluation.status,
+      inputLabel: "dataset records",
+      inputValue: (dataset?.recordCount ?? 0).toLocaleString(),
+      outputLabel: "metric results",
+      outputValue: String(handoff?.results.length ?? 0),
+      progress:
+        decision.status === "complete" ? 100 : Math.min(90, evaluationProgress),
+      entryCriteria: [
+        { label: "Immutable candidate dataset exists", met: !!dataset },
+        { label: "Evaluation handoff is accepted", met: !!handoff && handoff.status !== "requested" },
+      ],
+      exitCriteria: [
+        { label: "Required metrics and guardrails pass", met: evaluation.status === "complete" },
+        { label: "Promote or hold rationale is recorded", met: decision.status === "complete" },
+      ],
+      blocker:
+        decision.status === "complete"
+          ? decision.detail
+          : evaluation.status !== "complete"
+            ? evaluation.detail
+            : decision.detail,
+      href: `/projects/${id}/release#evaluation-handoff`,
+      action: "Open evaluation",
+    },
+  ];
   return (
     <>
       <PageIntro
@@ -1584,8 +1885,8 @@ function Workflow() {
           </p>
         </div>
       </div>
-      <div className="workflow-overview">
-        <Card>
+      <div className="workflow-contract-row">
+        <Card className="workflow-contract-card">
           <div className="eyebrow">Assigned workflow</div>
           <h3>{primary?.name ?? "No workflow assigned"}</h3>
           <p>
@@ -1598,62 +1899,90 @@ function Workflow() {
               Open Registry <ArrowRight size={13} />
             </Link>
           ) : null}
-        </Card>
-        <Card>
-          <div className="eyebrow">Live inputs · auto-populated</div>
-          <div className="tag-row">
-            <span className="tag">
-              Requirement {ps.requirements.currentVersion}
-            </span>
-            <span className="tag">Source plan · {ps.sourcePlanStatus}</span>
-            <span className="tag">
-              {plannedRecords.toLocaleString()} planned records
-            </span>
-            <span className="tag">
-              {ps.vendorEngagements.length} vendor engagement(s)
-            </span>
-            <span className="tag">
-              {ps.internalWorkBatches.length} in-house batch(es)
-            </span>
-          </div>
-          <p className="source-note">
-            Sources: current requirement, saved source plan, vendor
-            engagements, and in-house operations.
-          </p>
-        </Card>
-        <Card>
-          <div className="eyebrow">Evidence outputs · auto-populated</div>
-          <div className="tag-row">
-            <span className="tag">Decision records</span>
-            <span className="tag">QA report</span>
-            <span className="tag">Dataset manifest</span>
-            <span className="tag">Evaluation result</span>
-          </div>
-          <p className="source-note">
-            Outputs appear only when their source workflow creates immutable
-            evidence.
-          </p>
+          {primary ? (
+            <div className="tag-row">
+              <span className="tag">{primary.version}</span>
+              <span className="tag">Requirement {ps.requirements.currentVersion}</span>
+              <span className="tag">Source plan · {ps.sourcePlanStatus}</span>
+            </div>
+          ) : null}
         </Card>
       </div>
-      <div className="workflow-data-route" aria-label="Project workflow path">
+      <div
+        className="workflow-metric-grid"
+        role="region"
+        aria-label="Live workflow metrics"
+      >
         {[
-          "Requirement & source plan",
-          "Vendor / in-house collection",
-          "Layered quality control",
-          "Dataset release",
-          "Evaluation decision",
-        ].map((item, index, list) => (
-          <div className="workflow-route-item" key={item}>
-            <span>{index + 1}</span>
-            <b>{item}</b>
-            {index < list.length - 1 ? <ArrowRight size={15} /> : null}
+          ["Planned", plannedRecords.toLocaleString(), "saved source plan"],
+          ["Received", receivedRecords.toLocaleString(), "delivery evidence"],
+          ["Accepted", acceptedRecords.toLocaleString(), "quality evidence"],
+          ["Backlog", backlog.toLocaleString(), "latest operations snapshot"],
+          ["Daily throughput", dailyThroughput.toLocaleString(), "vendor + in-house"],
+          ["Release gates", `${satisfiedCheckpoints}/${checkpoints.length}`, "shared gate selector"],
+        ].map(([label, value, source]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+            <small>{source}</small>
           </div>
         ))}
       </div>
-      <ReleaseCheckpointPanel
-        checkpoints={checkpoints}
-        title="Release readiness inside this lifecycle"
-      />
+      {primary ? (
+        <section className="live-lifecycle" aria-labelledby="live-lifecycle-title">
+          <div className="section-label-row">
+            <div>
+              <strong id="live-lifecycle-title">Live lifecycle execution</strong>
+              <p>
+                Inputs, outputs, criteria, owners, and counts are derived from
+                the current project records.
+              </p>
+            </div>
+          </div>
+          <div className="lifecycle-stage-list">
+            {processStages.map((stage, index) => (
+              <LifecycleStageCard stage={stage} index={index} key={stage.id} />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <EmptyState
+          icon={<Layers3 />}
+          title="No lifecycle workflow assigned"
+          text="Assign a reusable workflow before monitoring execution. Current project counts remain visible above, but no stage contract is active yet."
+          action={
+            <Link className="button primary" href="/registry">
+              Assign workflow <ArrowRight size={13} />
+            </Link>
+          }
+        />
+      )}
+      <div className="release-readiness-summary">
+        <div>
+          <div className="eyebrow">Release readiness</div>
+          <strong>
+            {satisfiedCheckpoints} of {checkpoints.length} gates satisfied
+          </strong>
+          <p>
+            {nextCheckpoint
+              ? `Next blocker: ${nextCheckpoint.label} — ${nextCheckpoint.detail}`
+              : "All required release evidence is satisfied."}
+          </p>
+        </div>
+        <div className="release-readiness-progress">
+          <span>{Math.round((satisfiedCheckpoints / checkpoints.length) * 100)}%</span>
+          <div className="progress">
+            <i
+              style={{
+                width: `${(satisfiedCheckpoints / checkpoints.length) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+        <Link className="button primary" href={`/projects/${id}/release`}>
+          Open release details <ArrowRight size={13} />
+        </Link>
+      </div>
       <Card className="status-provenance">
         <div className="card-header">
           <div>
@@ -1694,6 +2023,15 @@ function Workflow() {
         </p>
       </Card>
       {primary ? (
+        <>
+          <div className="section-label-row workflow-definition-label">
+            <div>
+              <strong>Assigned execution definition</strong>
+              <p>
+                Versioned workflow-stage ownership, dependencies, and artifact links.
+              </p>
+            </div>
+          </div>
         <div className="workflow-timeline">
           {ps.workflowStages.map((stage, index) => (
             <Card key={stage.id} className="workflow-stage">
@@ -1763,18 +2101,8 @@ function Workflow() {
             </Card>
           ))}
         </div>
-      ) : (
-        <EmptyState
-          icon={<Layers3 />}
-          title="No lifecycle workflow assigned"
-          text="Assign a reusable workflow from the Registry. Until then, SignalOps shows live inputs and release blockers without presenting a placeholder workflow as configured work."
-          action={
-            <Link className="button primary" href="/registry">
-              Assign workflow <ArrowRight size={13} />
-            </Link>
-          }
-        />
-      )}
+        </>
+      ) : null}
     </>
   );
 }
